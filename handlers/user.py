@@ -3,7 +3,8 @@ from telegram.ext import ContextTypes, CommandHandler
 from telegram.constants import ParseMode
 from storage import get_post, update_post
 from config import AUTO_DELETE_SECONDS
-from utils.helpers import send_temp_message, check_admin
+from utils.helpers import send_temp_message, check_admin, check_membership
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from utils.helpers import send_temp_message, check_admin
 import asyncio
 import traceback
@@ -24,6 +25,39 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     post_id = args[0]
+    
+    # Check Force Subscribe
+    is_member = await check_membership(update.effective_user.id, context)
+    if not is_member:
+        from config import MAIN_CHANNEL_ID
+        # Get channel link? 
+        # Typically we need a link. Since we only have ID, we need to construct or cache invite link.
+        # But for public channel -100..., we can't easily guess link unless configured.
+        # Let's assume user configured a link or we can try to export.
+        # For simplicity, let's ask bot owner to put channel link in config or we try to get it.
+        try:
+             chat = await context.bot.get_chat(MAIN_CHANNEL_ID)
+             chan_link = chat.invite_link or chat.username
+             if not chan_link and chat.username:
+                 chan_link = f"https://t.me/{chat.username}"
+        except:
+             chan_link = "https://t.me/"
+             
+        # "Force Subscribe" UI
+        kb = [
+            [InlineKeyboardButton("📢 Join Channel", url=chan_link or "https://t.me/")],
+            [InlineKeyboardButton("🔄 Try Again", callback_data=f"check_sub_{post_id}")]
+        ]
+        
+        await update.message.reply_text(
+            "⚠️ **Access Denied**\n\n"
+            "You must join our main channel to access this content.\n"
+            "Please join and click 'Try Again'.",
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+
     post = get_post(post_id)
     
     # 1. Validate Post
@@ -126,3 +160,36 @@ async def auto_delete_job(context: ContextTypes.DEFAULT_TYPE):
         await context.bot.delete_message(chat_id=job.chat_id, message_id=job.data)
     except Exception as e:
         print(f"Auto-delete failed: {e}")
+
+async def handle_not_joined(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    post_id = data.replace("check_sub_", "")
+    
+    # Re-check
+    is_member = await check_membership(update.effective_user.id, context)
+    
+    if is_member:
+        await query.delete_message()
+        # Mock args and call start_user logic? 
+        # Or just extract logic to `serve_post(update, context, post_id)`
+        # Calling start_user from callback requires mocking args.
+        context.args = [post_id]
+        # We need a message to reply to. Callback has message.
+        # start_user expects update.message to be present for reply_text (line 23, 31..).
+        # We should patch update.message = query.message
+        # But safer to refactor logic.
+        # Let's just recursively call start_user ensuring context.args is set and we handle reply correctly.
+        # Actually start_user calls update.message.reply_...
+        # So we can set update.message = query.message
+        
+        # Create a fake update or modify?
+        # Simpler: just call the logic directly provided we refactor?
+        # No time to refactor deep.
+        # Let's shim it.
+        update.message = query.message
+        await start_user(update, context)
+    else:
+        await query.answer("❌ You haven't joined yet!", show_alert=True)

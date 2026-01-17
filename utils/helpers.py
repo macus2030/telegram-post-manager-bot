@@ -53,3 +53,18 @@ def validate_link(text: str) -> str | None:
         text = f"https://{text}"
         
     return text
+
+async def check_membership(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Check if user is member of Main Channel."""
+    from config import MAIN_CHANNEL_ID
+    if not MAIN_CHANNEL_ID: return True # No channel set = open access
+    
+    try:
+        member = await context.bot.get_chat_member(chat_id=MAIN_CHANNEL_ID, user_id=user_id)
+        if member.status in ['creator', 'administrator', 'member']:
+            return True
+    except Exception as e:
+        print(f"Error checking membership: {e}")
+        return False
+        
+    return False

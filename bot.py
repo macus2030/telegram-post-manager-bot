@@ -30,7 +30,7 @@ def main():
 
     # Register Handlers
     from handlers.admin import create_post_conv, admin_dashboard, clear_chat_history, main_channel_conv
-    from handlers.user import start_user
+    from handlers.user import start_user, handle_not_joined
     from handlers.manager import post_manager, handle_manager_callback, edit_post_conv
     from handlers.stats import stats_dashboard
     from handlers.bulk import bulk_conv
@@ -50,7 +50,8 @@ def main():
     application.add_handler(edit_post_conv)
 
     # Callbacks
-    application.add_handler(CallbackQueryHandler(handle_manager_callback, pattern="^(?!cat_|add_new_category|back_to_dashboard).*")) 
+    application.add_handler(CallbackQueryHandler(handle_not_joined, pattern="^check_sub_"))
+    application.add_handler(CallbackQueryHandler(handle_manager_callback, pattern="^(?!cat_|add_new_category|back_to_dashboard|check_sub_).*")) 
     # Old category callbacks are no longer needed as we use ReplyKeyboard, but keeping pattern exclusion in manager is fine.
     
     # Commands

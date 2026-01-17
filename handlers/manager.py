@@ -1,4 +1,4 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, error
 from telegram.ext import ContextTypes, CallbackQueryHandler, CommandHandler, ConversationHandler, MessageHandler, filters
 from telegram.constants import ParseMode
 from storage import get_all_posts, get_post, update_post, delete_post, clone_post, restore_post
@@ -73,7 +73,13 @@ async def show_post_list(update: Update, context: ContextTypes.DEFAULT_TYPE, pag
     markup = InlineKeyboardMarkup(kb)
     
     if update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=markup, parse_mode=ParseMode.MARKDOWN)
+        try:
+            await update.callback_query.edit_message_text(text, reply_markup=markup, parse_mode=ParseMode.MARKDOWN)
+        except error.BadRequest as e:
+            if "Message is not modified" in str(e):
+                pass
+            else:
+                raise e # Re-raise if other error
     else:
         await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.MARKDOWN)
 
