@@ -77,7 +77,13 @@ def main():
         print("Error: TELEGRAM_TOKEN not found in .env")
         return
 
-    persistence = PicklePersistence(filepath='bot_datastore')
+    if os.path.exists("/data"):
+        persistence_path = "/data/bot_datastore"
+    else:
+        persistence_path = "bot_datastore"
+        
+    persistence = PicklePersistence(filepath=persistence_path)
+    
     # Restore scheduled jobs
     # We need to run this async, but application.run_polling() blocks.
     # We can use post_init
@@ -87,7 +93,7 @@ def main():
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).persistence(persistence).post_init(post_init).build()
 
     # Register Handlers
-    from handlers.admin import create_post_conv, admin_dashboard, clear_chat_history, main_channel_conv
+    from handlers.admin import create_post_conv, admin_dashboard, clear_chat_history, main_channel_conv, scheduled_dashboard
     from handlers.user import start_user, handle_not_joined
     from handlers.manager import post_manager, handle_manager_callback, edit_post_conv
     from handlers.stats import stats_dashboard
@@ -125,6 +131,7 @@ def main():
     application.add_handler(MessageHandler(filters.Regex("^📊 Statistics$"), stats_dashboard))
     application.add_handler(MessageHandler(filters.Regex("^💾 Backup & Export$"), export_data))
     application.add_handler(MessageHandler(filters.Regex("^🧹 Clear Chat$"), clear_chat_history))
+    application.add_handler(MessageHandler(filters.Regex("^⏳ Scheduled Posts$"), scheduled_dashboard))
     application.add_handler(MessageHandler(filters.Regex("^🔙 Back$"), admin_dashboard))
     
     # Catch-all for dashboard
