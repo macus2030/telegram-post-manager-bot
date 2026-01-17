@@ -638,6 +638,9 @@ async def mc_input_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
+        # Debug
+        # await update.message.reply_text("Debug: Processing news...") # Temporary
+        
         text = update.message.text
         if text == "❌ Cancel": return await cancel(update, context)
         

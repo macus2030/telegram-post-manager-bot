@@ -366,7 +366,7 @@ def get_help_link() -> str:
         c.execute("SELECT value FROM config WHERE key = 'help_link'")
         row = c.fetchone()
         conn.close()
-        return json.loads(row[0]) if row else "https://t.me/example_tutorial"
+        return row[0] if row else "https://t.me/example_tutorial"
 
 def update_help_link(link: str):
     with lock:
