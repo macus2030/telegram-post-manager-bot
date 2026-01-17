@@ -670,23 +670,39 @@ async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return MC_INPUT_NEWS
 
 async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         # Prepare variables
         data = context.user_data
+        
+        try:
+             hl = get_help_link()
+        except Exception as e:
+             await update.message.reply_text(f"❌ Error getting help link: {e}")
+             return MC_INPUT_NEWS
+
         variables = {
             "post_id": data.get('mc_post_id', 'N/A'),
             "short_link": data.get('mc_short_link', 'N/A'),
             "news": data.get('mc_news', 'N/A'),
-            "how_to_open_link": get_help_link()
+            "how_to_open_link": hl
         }
         
-        template = get_main_template()
+        try:
+            template = get_main_template()
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error getting template: {e}")
+            return MC_INPUT_NEWS
         
         # Validation
         missing = []
         import string
         # Get field names from template
-        required_keys = [t[1] for t in string.Formatter().parse(template) if t[1] is not None]
+        try:
+            required_keys = [t[1] for t in string.Formatter().parse(template) if t[1] is not None]
+        except Exception as e:
+             await update.message.reply_text(f"❌ Error parsing template: {e}")
+             return MC_INPUT_NEWS
         
         for key in required_keys:
             if key not in variables:
@@ -725,7 +741,9 @@ async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return MC_CONFIRM
 
     except Exception as e:
-        print(f"Error in mc_render_preview: {e}")
+        import traceback
+        tb = traceback.format_exc()
+        print(f"Error in mc_render_preview: {e}\n{tb}")
         await update.message.reply_text(f"❌ unexpected error in preview: {e}")
         return MC_INPUT_NEWS
 
