@@ -39,3 +39,17 @@ def check_admin(user_id: int) -> bool:
     """Check if user is the admin."""
     from config import ADMIN_ID
     return user_id == ADMIN_ID
+    
+def validate_link(text: str) -> str | None:
+    """Validate and format a link. Returns None if invalid."""
+    text = text.strip()
+    
+    # Needs at least one dot to be a domain/link
+    if "." not in text:
+        return None
+        
+    # Auto-add https:// if missing
+    if not (text.startswith("http://") or text.startswith("https://")):
+        text = f"https://{text}"
+        
+    return text

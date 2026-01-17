@@ -10,19 +10,56 @@ lock = threading.Lock()
 # Initial structure
 INITIAL_DATA = {
     "posts": {},
-    "templates": {}
+    "templates": {},
+    "categories": {},
+    "msg_template": """LN Post : {post_id}
+
+{caption}
+
+📂 Category: {category}
+⏳ This message will auto-delete in {time} mins.
+
+Download/Watch Link👇🏻 
+{link}
+
+How to Open 
+{how_to_open_link}""",
+    "main_template": """{news}
+
+ISKO IGNORE KARO, VIDEOS KI LINK NICHE HAI..😉
+.
+Post - LN{post_id}
+{short_link}
+
+How to Use Telegram Bot?
+{how_to_open_link}"""
 }
 
 def load_data() -> Dict[str, Any]:
     """Load data from JSON file or return initial structure if not exists."""
     if not os.path.exists(DATA_FILE):
+        # Initialize default categories if creating new
+        INITIAL_DATA["categories"] = {
+            "1": {"id": "1", "name": "Movies"},
+            "2": {"id": "2", "name": "Series"},
+            "3": {"id": "3", "name": "Other"}
+        }
         save_data(INITIAL_DATA)
         return INITIAL_DATA
     
     with lock:
         try:
             with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                # Ensure categories exist in old data
+                if "categories" not in data:
+                    data["categories"] = {
+                         "1": {"id": "1", "name": "Movies"},
+                         "2": {"id": "2", "name": "Series"},
+                         "3": {"id": "3", "name": "Other"}
+                    }
+                    save_data(data)
+                return data
         except (json.JSONDecodeError, FileNotFoundError):
             return INITIAL_DATA
 
@@ -101,5 +138,79 @@ def save_template(name: str, content: str):
     data["templates"][name] = {"name": name, "content": content}
     save_data(data)
 
+
 def get_templates():
     return load_data()["templates"]
+
+def get_message_template() -> str:
+    data = load_data()
+    return data.get("msg_template", INITIAL_DATA["msg_template"])
+
+def update_message_template(template: str):
+    data = load_data()
+    data["msg_template"] = template
+    save_data(data)
+
+def get_help_link() -> str:
+    data = load_data()
+    # Default fallback
+    return data.get("help_link", "https://t.me/example_tutorial")
+
+def update_help_link(link: str):
+    data = load_data()
+    data["help_link"] = link
+    save_data(data)
+
+def get_main_template() -> str:
+    data = load_data()
+    return data.get("main_template", INITIAL_DATA["main_template"])
+
+def update_main_template(template: str):
+    data = load_data()
+    data["main_template"] = template
+    save_data(data)
+
+# Category Handlers
+def get_categories() -> Dict[str, Any]:
+    return load_data()["categories"]
+
+def get_category(cat_id: str) -> Optional[Dict[str, Any]]:
+    return get_categories().get(str(cat_id))
+
+def add_category(name: str) -> str:
+    data = load_data()
+    current_ids = [int(k) for k in data["categories"].keys()]
+    new_id = str(max(current_ids) + 1 if current_ids else 1)
+    
+    data["categories"][new_id] = {
+        "id": new_id, 
+        "name": name
+    }
+    save_data(data)
+    return new_id
+
+def update_category(cat_id: str, name: str):
+    data = load_data()
+    if str(cat_id) in data["categories"]:
+        old_name = data["categories"][str(cat_id)]["name"]
+        data["categories"][str(cat_id)]["name"] = name
+        
+        # Update all posts with this category
+        for post in data["posts"].values():
+            if post.get("category") == old_name:
+                post["category"] = name
+                
+        save_data(data)
+
+def delete_category(cat_id: str):
+    data = load_data()
+    if str(cat_id) in data["categories"]:
+        cat_name = data["categories"][str(cat_id)]["name"]
+        del data["categories"][str(cat_id)]
+        
+        # Update posts to Uncategorized
+        for post in data["posts"].values():
+            if post.get("category") == cat_name:
+                post["category"] = "Uncategorized"
+                
+        save_data(data)

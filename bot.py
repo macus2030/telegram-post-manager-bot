@@ -1,7 +1,7 @@
 import logging
 import os
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, CallbackQueryHandler, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, CallbackQueryHandler, MessageHandler, filters, PicklePersistence
 
 from config import TELEGRAM_TOKEN
 # Handlers will be imported here
@@ -25,25 +25,33 @@ def main():
         print("Error: TELEGRAM_TOKEN not found in .env")
         return
 
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    persistence = PicklePersistence(filepath='bot_datastore')
+    application = ApplicationBuilder().token(TELEGRAM_TOKEN).persistence(persistence).build()
 
     # Register Handlers
-    from handlers.admin import create_post_conv, admin_dashboard, clear_chat_history
+    from handlers.admin import create_post_conv, admin_dashboard, clear_chat_history, main_channel_conv
     from handlers.user import start_user
     from handlers.manager import post_manager, handle_manager_callback, edit_post_conv
     from handlers.stats import stats_dashboard
     from handlers.bulk import bulk_conv
     from handlers.backup import export_data
     from handlers.search import search_conv
+
+    from handlers.categories import category_conv
+    from handlers.settings import settings_conv, settings_dashboard
     
     # Conversations first
+    application.add_handler(settings_conv)
+    application.add_handler(category_conv)
     application.add_handler(create_post_conv)
+    application.add_handler(main_channel_conv)
     application.add_handler(bulk_conv)
     application.add_handler(search_conv)
     application.add_handler(edit_post_conv)
 
     # Callbacks
-    application.add_handler(CallbackQueryHandler(handle_manager_callback))
+    application.add_handler(CallbackQueryHandler(handle_manager_callback, pattern="^(?!cat_|add_new_category|back_to_dashboard).*")) 
+    # Old category callbacks are no longer needed as we use ReplyKeyboard, but keeping pattern exclusion in manager is fine.
     
     # Commands
     application.add_handler(CommandHandler("start", start_user))
@@ -51,6 +59,10 @@ def main():
     # Admin Menu Buttons
     application.add_handler(MessageHandler(filters.Regex("^🏠 Dashboard$"), admin_dashboard))
     application.add_handler(MessageHandler(filters.Regex("^📝 Post Manager$"), post_manager))
+    # Categories button is now handled by category_conv entry point
+    
+    application.add_handler(MessageHandler(filters.Regex("^⚙️ Settings$"), settings_dashboard))
+
     application.add_handler(MessageHandler(filters.Regex("^📊 Statistics$"), stats_dashboard))
     application.add_handler(MessageHandler(filters.Regex("^💾 Backup & Export$"), export_data))
     application.add_handler(MessageHandler(filters.Regex("^🧹 Clear Chat$"), clear_chat_history))
