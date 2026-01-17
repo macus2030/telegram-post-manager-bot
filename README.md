@@ -68,6 +68,4 @@ A robust Telegram bot for managing channels, creating posts with file attachment
 *   `storage.py`: Handles data persistence (JSON).
 *   `config.py`: Configuration loader.
 
-## License
 
-MIT

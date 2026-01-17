@@ -366,13 +366,30 @@ def get_help_link() -> str:
         c.execute("SELECT value FROM config WHERE key = 'help_link'")
         row = c.fetchone()
         conn.close()
-        return row[0] if row else "https://t.me/example"
+        return json.loads(row[0]) if row else "https://t.me/example_tutorial"
 
 def update_help_link(link: str):
     with lock:
         conn = get_connection()
         c = conn.cursor()
         c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ("help_link", link))
+        conn.commit()
+        conn.close()
+
+def get_last_news() -> Optional[str]:
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT value FROM config WHERE key = 'last_news'")
+        row = c.fetchone()
+        conn.close()
+    return row[0] if row else None
+
+def save_last_news(content: str):
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ("last_news", content))
         conn.commit()
         conn.close()
 
@@ -587,6 +604,28 @@ def search_posts(query: str, limit: int = 10) -> List[Tuple[int, Dict[str, Any]]
         rows = c.fetchall()
         conn.close()
         
+    results = []
+    for r in rows:
+        results.append((r["id"], json.loads(r["data"])))
+    return results
+
+def get_pending_scheduled_posts() -> List[Tuple[int, Dict[str, Any]]]:
+    # Fetch posts where is_scheduled is True or status is 'pending'
+    # Since specific columns like 'status' might not be in the SQL schema effectively for filter if not migrated,
+    # we use the JSON search or just rely on 'status' column if we keep it updated.
+    # We moved to JSON blob primarily.
+    # BEST APPROACH: Search JSON for "is_scheduled": true
+    # Note: SQLite JSON queries can be slow without index, but for scheduling it's fine.
+    
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        # "is_scheduled": true  (ignoring spacing issues in json text by using LIKE or proper json extract if available)
+        # Simple LIKE query is safest without json extension dependence
+        c.execute("SELECT id, data FROM posts WHERE data LIKE '%\"is_scheduled\": true%'")
+        rows = c.fetchall()
+        conn.close()
+    
     results = []
     for r in rows:
         results.append((r["id"], json.loads(r["data"])))

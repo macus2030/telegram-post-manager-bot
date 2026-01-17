@@ -3,22 +3,23 @@ import html
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 from telegram.constants import ParseMode, ChatAction
 from config import ADMIN_ID, AUTO_DELETE_SECONDS, MAIN_CHANNEL_ID
-from storage import add_post, save_template, get_templates, get_message_template, get_help_link, get_post, get_main_template, update_post, get_latest_post_id
+from storage import add_post, save_template, get_templates, get_message_template, get_help_link, get_post, get_main_template, update_post, get_latest_post_id, get_last_news, save_last_news
 from utils.helpers import send_temp_message, show_loading, escape_markdown_v2, check_admin, validate_link
 import time
 
 # States
 SELECT_TYPE, UPLOAD_FILE, INPUT_LINK, EDIT_CAPTION, INPUT_PASSWORD, SELECT_CATEGORY, CONFIRM = range(7)
 # Main Channel Flow States
-MC_INPUT_ID, MC_INPUT_LINK, MC_INPUT_NEWS, MC_CONFIRM, MC_SCHEDULE = range(6, 11)
+MC_INPUT_ID, MC_INPUT_LINK, MC_INPUT_NEWS, MC_CONFIRM, MC_SCHEDULE, MC_SCHEDULE_CONFIRM = range(6, 12)
 
 # Keyboards
 DASHBOARD_KB = [
     ["➕ Create Post", "📦 Bulk Create"],
-    ["📢 Main Channel Post", "📝 Post Manager"],
-    ["📂 Categories", "📊 Statistics"],
-    ["⚙️ Settings", "💾 Backup & Export"],
-    ["🔍 Search", "🧹 Clear Chat"]
+    ["📢 Main Channel Post", "⏳ Scheduled Posts"],
+    ["📝 Post Manager", "📂 Categories"],
+    ["⚙️ Settings", "📊 Statistics"],
+    ["🔍 Search", "💾 Backup & Export"],
+    ["🧹 Clear Chat"]
 ]
 
 async def admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -54,6 +55,10 @@ async def global_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # End current conversation so the next click works
         await update.message.reply_text("🔄 Switching modes... Please click **Main Channel Post** again.", parse_mode="Markdown")
         return ConversationHandler.END
+
+    elif text == "⏳ Scheduled Posts":
+         await scheduled_dashboard(update, context)
+         return ConversationHandler.END
 
     elif text == "➕ Create Post":
          await update.message.reply_text("🔄 Switching modes... Please click **Create Post** again.", parse_mode="Markdown")
@@ -97,7 +102,46 @@ async def global_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await cancel(update, context) # Default
 
 # Regex for all menu buttons
-MENU_REGEX = "^(🏠 Dashboard|📝 Post Manager|📂 Categories|⚙️ Settings|📊 Statistics|💾 Backup & Export|🧹 Clear Chat|❌ Cancel|➕ Create Post|📦 Bulk Create|📢 Main Channel Post|🔍 Search)$"
+MENU_REGEX = "^(🏠 Dashboard|📝 Post Manager|📂 Categories|⚙️ Settings|📊 Statistics|💾 Backup & Export|🧹 Clear Chat|❌ Cancel|➕ Create Post|📦 Bulk Create|📢 Main Channel Post|🔍 Search|⏳ Scheduled Posts)$"
+
+async def scheduled_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from storage import get_pending_scheduled_posts
+    import datetime
+    
+    pending = get_pending_scheduled_posts()
+    
+    if not pending:
+         await update.message.reply_text("⏳ **Scheduled Posts**\n\nNo active scheduled posts.")
+         return
+         
+    text = "⏳ **Scheduled Posts** (Upcoming)\n\n"
+    now = datetime.datetime.now().timestamp()
+    
+    count = 0
+    for pid, data in pending:
+        # Check active
+        if not data.get("is_scheduled"): continue
+        
+        ts = data.get("scheduled_for")
+        if not ts: continue
+        
+        # IST
+        dt = datetime.datetime.fromtimestamp(ts)
+        ist = dt + datetime.timedelta(hours=5, minutes=30)
+        time_str = ist.strftime('%d-%b %I:%M %p')
+        
+        status = data.get("status", "pending")
+        if status == "failed": icon = "🔴"
+        elif status == "sent": icon = "🟢"
+        else: icon = "🟡" # Pending
+        
+        text += f"{icon} **#{pid}** - `{time_str}` IST\n"
+        count += 1
+        
+    if count == 0:
+        text += "No active scheduled posts."
+        
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
 
 # --- CREATE POST WORKFLOW ---
 
@@ -581,6 +625,7 @@ async def mc_input_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📰 **Enter News/Content**\n\n"
         "Please send the text content (News, ignoring text, etc.) to place at the top.",
+        reply_markup=ReplyKeyboardMarkup([["🔄 Use Last News"], ["❌ Cancel"]], resize_keyboard=True, one_time_keyboard=True),
         parse_mode=ParseMode.MARKDOWN
     )
     return MC_INPUT_NEWS
@@ -588,6 +633,23 @@ async def mc_input_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if text == "❌ Cancel": return await cancel(update, context)
+    
+    # Check if "Use Last News"
+    if text == "🔄 Use Last News":
+        last = get_last_news()
+        if last:
+            # We assume last news is already formatted (or we format it again? best to save raw)
+            # Actually simplest is: user sends raw, we strike it.
+            # So if we save raw, we strike it here.
+            # Let's save RAW in db.
+            text = last
+            await update.message.reply_text(f"🔄 Using last news:\n{text}")
+        else:
+             await update.message.reply_text("⚠ No previous news found. Please enter text.")
+             return MC_INPUT_NEWS
+    
+    # Save this as new last news (Raw)
+    save_last_news(text)
     
     # Auto-apply strikethrough as requested
     escaped_text = html.escape(text)
@@ -745,12 +807,40 @@ async def send_scheduled_post_job(context: ContextTypes.DEFAULT_TYPE):
             "posted_at": int(time.time()),
             "channel_message_id": msg.message_id,
             "is_scheduled": False, # Done
-            "scheduled_for": None
+            "scheduled_for": None,
+            "status": "sent",
+            "retry_count": 0
         })
         print(f"Scheduled Post #{post_id} sent successfully.")
         
     except Exception as e:
         print(f"Failed to send scheduled post #{post_id}: {e}")
+        
+        # Retry Logic
+        post = get_post(post_id)
+        retry_count = post.get("retry_count", 0)
+        
+        if retry_count < 3:
+            new_count = retry_count + 1
+            print(f"Retrying post #{post_id} (Attempt {new_count}/3) in 60s...")
+            
+            update_post(post_id, {"retry_count": new_count})
+            
+            # Reschedule self
+            context.job_queue.run_once(
+                send_scheduled_post_job, 
+                60, 
+                chat_id=chat_id, 
+                name=f"sched_{post_id}_retry",
+                data=data
+            )
+        else:
+             print(f"Max retries reached for #{post_id}. Marking as failed.")
+             update_post(post_id, {
+                 "status": "failed", 
+                 "is_scheduled": False,
+                 "note": f"Failed after 3 retries. Error: {e}"
+             })
 
 async def mc_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -779,63 +869,116 @@ async def mc_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             raise ValueError("Invalid format")
             
-        if delay_seconds <= 0:
-             await update.message.reply_text("⚠ Invalid time.")
-             return MC_SCHEDULE
+    except ValueError:
+        await update.message.reply_text("❌ Invalid format. Use Minutes (int) or HH:MM.")
+        return MC_SCHEDULE
 
-        # Schedule Job
+    if delay_seconds <= 0:
+         await update.message.reply_text("⚠ Invalid time. Must be in the future.")
+         return MC_SCHEDULE
+
+    # Schedule Job
+    post_id = context.user_data['mc_post_id']
+    preview_text = context.user_data['mc_preview_text']
+    
+    # Calculate Future Time
+    schedule_time = datetime.datetime.now() + datetime.timedelta(seconds=delay_seconds)
+    
+    # Store temporary schedule data
+    context.user_data['temp_schedule_time'] = schedule_time.timestamp()
+    context.user_data['temp_delay_seconds'] = delay_seconds
+    
+    # Validation: Conflict Detection (Same as before)
+    pending = get_pending_scheduled_posts()
+    warnings = ""
+    for pid, data in pending:
+        if pid == post_id: continue 
+        existing_time_ts = data.get("scheduled_for")
+        if existing_time_ts:
+            existing_time = datetime.datetime.fromtimestamp(existing_time_ts)
+            diff = abs((schedule_time - existing_time).total_seconds())
+            if diff < 300: 
+                warnings += f"\n⚠ **Conflict**: Post #{pid} is within 5 mis of this."
+
+    # IST Conversion
+    ist_time = schedule_time + datetime.timedelta(hours=5, minutes=30)
+    ist_str = ist_time.strftime('%Y-%m-%d %I:%M %p') # 06:19 PM format
+    
+    channel_id = MAIN_CHANNEL_ID
+    file_info = f"Post #{post_id}" # We could fetch file name if we want rich preview
+    
+    msg_text = (
+        "⏳ **Confirm Schedule**\n\n"
+        f"**Post**: {file_info}\n"
+        f"**Channel**: `{channel_id}`\n"
+        f"**Time (IST)**: `{ist_str}` (India Standard Time)\n"
+        f"**Time (UTC)**: `{schedule_time.strftime('%H:%M')}`\n"
+        f"{warnings}\n"
+        "Please confirm execution."
+    )
+    
+    kb = [["✅ Confirm Schedule"], ["✏ Edit Time", "❌ Cancel"]]
+    await update.message.reply_text(msg_text, reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True), parse_mode=ParseMode.MARKDOWN)
+    return MC_SCHEDULE_CONFIRM
+
+async def mc_schedule_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text == "❌ Cancel": return await cancel(update, context)
+    
+    if text == "✏ Edit Time":
+        await update.message.reply_text("Enter new delay (minutes) or HH:MM:")
+        return MC_SCHEDULE
+
+    if text == "✅ Confirm Schedule":
+        # Actuate
         post_id = context.user_data['mc_post_id']
         preview_text = context.user_data['mc_preview_text']
+        delay_seconds = context.user_data['temp_delay_seconds']
+        schedule_time_ts = context.user_data['temp_schedule_time']
         
-        # Calculate Future Time
-        # delay_seconds is calculated above.
-        # We need datetime object for schedule_date
-        # Ensure it is timezone aware or UTC? PTB usually handles naive as local or UTC.
-        # Best to use delay_seconds to add to NOW.
+        target_chat_id = MAIN_CHANNEL_ID
         
-        schedule_time = datetime.datetime.now() + datetime.timedelta(seconds=delay_seconds)
-        
-        # IST Conversion (UTC + 5:30)
+        # IST for final message
+        schedule_time = datetime.datetime.fromtimestamp(schedule_time_ts)
         ist_time = schedule_time + datetime.timedelta(hours=5, minutes=30)
         
         try:
-            # Use JobQueue instead of schedule_date
+             # Update DB
+            update_post(post_id, {
+                "posted_to_channel": False, 
+                "is_scheduled": True,
+                "scheduled_for": int(schedule_time_ts),
+                "channel_preview_text": preview_text,
+                "target_chat_id": target_chat_id,
+                "status": "pending",
+                "retry_count": 0
+            })
+            
+            # JobQueue
             context.job_queue.run_once(
                 send_scheduled_post_job, 
                 delay_seconds,
-                chat_id=MAIN_CHANNEL_ID,
+                chat_id=target_chat_id,
                 name=f"sched_{post_id}",
                 data={
-                    "chat_id": MAIN_CHANNEL_ID,
+                    "chat_id": target_chat_id,
                     "text": preview_text,
                     "post_id": post_id
                 }
             )
             
-            # Update DB
-            update_post(post_id, {
-                "posted_to_channel": False, # Not yet
-                "is_scheduled": True,
-                "scheduled_for": int(schedule_time.timestamp())
-            })
-            
             await update.message.reply_text(
-                f"✅ **Successfully Scheduled!**\n\n"
-                f"Post #{post_id} will be sent to the channel at:\n"
-                f"`{ist_time.strftime('%Y-%m-%d %H:%M:%S')} (IST)`\n\n"
-                "_(Buffered by Bot Persistence)_",
+                f"✅ **Scheduled Successfully!**\n"
+                f"at `{ist_time.strftime('%Y-%m-%d %I:%M %p')} IST`",
                 parse_mode=ParseMode.MARKDOWN
             )
         except Exception as e:
-             await update.message.reply_text(f"❌ Failed to schedule: {e}")
-             return MC_SCHEDULE
-        
+            await update.message.reply_text(f"❌ Error: {e}")
+            
         await admin_dashboard(update, context)
         return ConversationHandler.END
         
-    except ValueError:
-        await update.message.reply_text("❌ Invalid format. Use Minutes (int) or HH:MM.")
-        return MC_SCHEDULE
+    return await cancel(update, context)
 
 
 
@@ -846,7 +989,8 @@ main_channel_conv = ConversationHandler(
         MC_INPUT_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_input_link)],
         MC_INPUT_NEWS: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_input_news)],
         MC_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_action)],
-        MC_SCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_schedule_input)]
+        MC_SCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_schedule_input)],
+        MC_SCHEDULE_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_schedule_confirm)]
     },
     fallbacks=[
         MessageHandler(filters.Regex(MENU_REGEX), global_fallback),

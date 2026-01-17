@@ -3,9 +3,13 @@ import os
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, CallbackQueryHandler, MessageHandler, filters, PicklePersistence
 
+import datetime
+
 from config import TELEGRAM_TOKEN
 # Handlers will be imported here
 # from handlers import admin, user
+from storage import get_pending_scheduled_posts, update_post
+from handlers.admin import send_scheduled_post_job
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -20,13 +24,67 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     """Log the error and send a telegram message to notify the developer."""
     logging.error(f"Exception while handling an update: {context.error}")
 
+async def restore_scheduled_jobs(application):
+    """Restore pending jobs from database on startup."""
+    posts = get_pending_scheduled_posts()
+    count = 0
+    now = datetime.datetime.now().timestamp()
+    
+    for pid, data in posts:
+        # Check if actually scheduled
+        if not data.get("is_scheduled"):
+            continue
+            
+        scheduled_for = data.get("scheduled_for")
+        if not scheduled_for:
+            continue
+            
+        target_chat_id = data.get("target_chat_id")
+        preview_text = data.get("channel_preview_text")
+        
+        if not target_chat_id or not preview_text:
+            logging.warning(f"Post #{pid} missing schedule data. Skipping.")
+            continue
+            
+        # Calculate delay
+        delay = scheduled_for - now
+        
+        # If passed?
+        if delay < 0:
+            logging.warning(f"Post #{pid} schedule time passed. Marking failed.")
+            update_post(str(pid), {"status": "failed", "is_scheduled": False, "note": "Missed schedule during downtime."})
+            continue
+            
+        # Re-schedule
+        application.job_queue.run_once(
+            send_scheduled_post_job, 
+            delay,
+            chat_id=target_chat_id,
+            name=f"sched_{pid}",
+            data={
+                "chat_id": target_chat_id,
+                "text": preview_text,
+                "post_id": str(pid)
+            }
+        )
+        count += 1
+        
+    if count > 0:
+        print(f"🔄 Restored {count} scheduled posts.")
+
 def main():
     if not TELEGRAM_TOKEN:
         print("Error: TELEGRAM_TOKEN not found in .env")
         return
 
     persistence = PicklePersistence(filepath='bot_datastore')
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).persistence(persistence).build()
+    # Restore scheduled jobs
+    # We need to run this async, but application.run_polling() blocks.
+    # We can use post_init
+    async def post_init(app):
+        await restore_scheduled_jobs(app)
+        
+    application = ApplicationBuilder().token(TELEGRAM_TOKEN).persistence(persistence).post_init(post_init).build()
 
     # Register Handlers
     from handlers.admin import create_post_conv, admin_dashboard, clear_chat_history, main_channel_conv
