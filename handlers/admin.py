@@ -631,86 +631,94 @@ async def mc_input_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return MC_INPUT_NEWS
 
 async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if text == "❌ Cancel": return await cancel(update, context)
-    
-    # Check if "Use Last News"
-    if text == "🔄 Use Last News":
-        last = get_last_news()
-        if last:
-            # We assume last news is already formatted (or we format it again? best to save raw)
-            # Actually simplest is: user sends raw, we strike it.
-            # So if we save raw, we strike it here.
-            # Let's save RAW in db.
-            text = last
-            await update.message.reply_text(f"🔄 Using last news:\n{text}")
-        else:
-             await update.message.reply_text("⚠ No previous news found. Please enter text.")
-             return MC_INPUT_NEWS
-    
-    # Save this as new last news (Raw)
-    save_last_news(text)
-    
-    # Auto-apply strikethrough as requested
-    escaped_text = html.escape(text)
-    context.user_data['mc_news'] = f"<s>{escaped_text}</s>"
-    return await mc_render_preview(update, context)
+    try:
+        text = update.message.text
+        if text == "❌ Cancel": return await cancel(update, context)
+        
+        # Check if "Use Last News"
+        if text == "🔄 Use Last News":
+            last = get_last_news()
+            if last:
+                text = last
+                await update.message.reply_text(f"🔄 Using last news:\n{text}")
+            else:
+                 await update.message.reply_text("⚠ No previous news found. Please enter text.")
+                 return MC_INPUT_NEWS
+        
+        # Save this as new last news (Raw)
+        try:
+            save_last_news(text)
+        except Exception as e:
+            print(f"Error saving last news: {e}")
+        
+        # Auto-apply strikethrough as requested
+        escaped_text = html.escape(text)
+        context.user_data['mc_news'] = f"<s>{escaped_text}</s>"
+        return await mc_render_preview(update, context)
+    except Exception as e:
+        print(f"Error in mc_input_news: {e}")
+        await update.message.reply_text(f"❌ Error processing input: {e}")
+        return MC_INPUT_NEWS
 
 async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Prepare variables
-    data = context.user_data
-    variables = {
-        "post_id": data['mc_post_id'],
-        "short_link": data['mc_short_link'],
-        "news": data['mc_news'],
-        "how_to_open_link": get_help_link()
-    }
-    
-    template = get_main_template()
-    
-    # Validation
-    missing = []
-    import string
-    # Get field names from template
-    required_keys = [t[1] for t in string.Formatter().parse(template) if t[1] is not None]
-    
-    for key in required_keys:
-        if key not in variables:
-            missing.append(key)
-            
-    if missing:
-        await update.message.reply_text(
-            f"❌ Template Error: The following placeholders are missing data: {', '.join(missing)}\n"
-            "Please check your template or inputs."
-        )
-        return MC_INPUT_NEWS # Ask for news again? Or just Stuck? Let's go back to News or Dashboard.
-        # Actually, variables come from previous steps. Only way to fix is ensuring code provides them.
-        # Since I hardcoded valid variables, this detects if user Added custom keys in template.
+    try:
+        # Prepare variables
+        data = context.user_data
+        variables = {
+            "post_id": data.get('mc_post_id', 'N/A'),
+            "short_link": data.get('mc_short_link', 'N/A'),
+            "news": data.get('mc_news', 'N/A'),
+            "how_to_open_link": get_help_link()
+        }
         
-    try:
-        preview_text = template.format(**variables)
-        context.user_data['mc_preview_text'] = preview_text
-    except Exception as e:
-        await update.message.reply_text(f"❌ Formatting Error: {e}")
-        return MC_INPUT_NEWS
-
-    # Show Buttons
-    kb = [
-        ["🚀 Post to Channel", "⏰ Schedule"],
-        ["👁️ Preview as Channel", "📋 Copy Content"],
-        ["❌ Cancel"]
-    ]
+        template = get_main_template()
+        
+        # Validation
+        missing = []
+        import string
+        # Get field names from template
+        required_keys = [t[1] for t in string.Formatter().parse(template) if t[1] is not None]
+        
+        for key in required_keys:
+            if key not in variables:
+                missing.append(key)
+                
+        if missing:
+            await update.message.reply_text(
+                f"❌ Template Error: The following placeholders are missing data: {', '.join(missing)}\n"
+                "Please check your template or inputs."
+            )
+            return MC_INPUT_NEWS
+            
+        try:
+            preview_text = template.format(**variables)
+            context.user_data['mc_preview_text'] = preview_text
+        except Exception as e:
+            await update.message.reply_text(f"❌ Formatting Error: {e}")
+            return MC_INPUT_NEWS
     
-    try:
-        await update.message.reply_text(
-            f"📄 **Preview**:\n\n{preview_text}\n\nSelect an action:",
-            reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
-            parse_mode=ParseMode.HTML
-        )
+        # Show Buttons
+        kb = [
+            ["🚀 Post to Channel", "⏰ Schedule"],
+            ["👁️ Preview as Channel", "📋 Copy Content"],
+            ["❌ Cancel"]
+        ]
+        
+        try:
+            await update.message.reply_text(
+                f"📄 **Preview**:\n\n{preview_text}\n\nSelect an action:",
+                reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            await update.message.reply_text(f"❌ Preview Error (HTML): {e}\n\nRaw Text:\n{preview_text}")
+            return MC_INPUT_NEWS
+        return MC_CONFIRM
+
     except Exception as e:
-        await update.message.reply_text(f"❌ Preview Error (HTML): {e}\n\nRaw Text:\n{preview_text}")
+        print(f"Error in mc_render_preview: {e}")
+        await update.message.reply_text(f"❌ unexpected error in preview: {e}")
         return MC_INPUT_NEWS
-    return MC_CONFIRM
 
 async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
