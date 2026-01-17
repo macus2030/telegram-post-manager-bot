@@ -795,6 +795,9 @@ async def mc_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         schedule_time = datetime.datetime.now() + datetime.timedelta(seconds=delay_seconds)
         
+        # IST Conversion (UTC + 5:30)
+        ist_time = schedule_time + datetime.timedelta(hours=5, minutes=30)
+        
         try:
             # Use JobQueue instead of schedule_date
             context.job_queue.run_once(
@@ -819,7 +822,7 @@ async def mc_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"✅ **Successfully Scheduled!**\n\n"
                 f"Post #{post_id} will be sent to the channel at:\n"
-                f"`{schedule_time.strftime('%Y-%m-%d %H:%M:%S')}`\n\n"
+                f"`{ist_time.strftime('%Y-%m-%d %H:%M:%S')} (IST)`\n\n"
                 "_(Buffered by Bot Persistence)_",
                 parse_mode=ParseMode.MARKDOWN
             )
