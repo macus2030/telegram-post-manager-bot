@@ -692,6 +692,7 @@ async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text=preview_text,
                 parse_mode=ParseMode.HTML
             )
+            
             # Update DB
             update_post(post_id, {
                 "posted_to_channel": True,
@@ -726,6 +727,37 @@ async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return MC_SCHEDULE
 
+    return MC_CONFIRM
+
+async def send_scheduled_post_job(context: ContextTypes.DEFAULT_TYPE):
+    """Job to send the scheduled post."""
+    job = context.job
+    data = job.data
+    
+    chat_id = data['chat_id']
+    text = data['text']
+    post_id = data['post_id']
+    
+    try:
+        msg = await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Update DB
+        update_post(post_id, {
+            "posted_to_channel": True,
+            "posted_at": int(time.time()),
+            "channel_message_id": msg.message_id,
+            "is_scheduled": False, # Done
+            "scheduled_for": None
+        })
+        print(f"Scheduled Post #{post_id} sent successfully.")
+        
+    except Exception as e:
+        print(f"Failed to send scheduled post #{post_id}: {e}")
+
 async def mc_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if text == "❌ Cancel": return await cancel(update, context)
@@ -747,7 +779,6 @@ async def mc_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             now = datetime.datetime.now()
             target_time = datetime.datetime.strptime(text, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
             if target_time < now:
-                # Assume tomorrow? or error. "Future time today".
                 await update.message.reply_text("⚠ Time passed. Please use future time.")
                 return MC_SCHEDULE
             delay_seconds = (target_time - now).total_seconds()
@@ -760,8 +791,6 @@ async def mc_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Schedule Job
         post_id = context.user_data['mc_post_id']
-        # Schedule Native Telegram Post
-        post_id = context.user_data['mc_post_id']
         preview_text = context.user_data['mc_preview_text']
         
         # Calculate Future Time
@@ -773,18 +802,22 @@ async def mc_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         schedule_time = datetime.datetime.now() + datetime.timedelta(seconds=delay_seconds)
         
         try:
-            msg = await context.bot.send_message(
+            # Use JobQueue instead of schedule_date
+            context.job_queue.run_once(
+                send_scheduled_post_job, 
+                delay_seconds,
                 chat_id=MAIN_CHANNEL_ID,
-                text=preview_text,
-                parse_mode=ParseMode.HTML,
-                schedule_date=schedule_time
+                name=f"sched_{post_id}",
+                data={
+                    "chat_id": MAIN_CHANNEL_ID,
+                    "text": preview_text,
+                    "post_id": post_id
+                }
             )
             
             # Update DB
             update_post(post_id, {
-                "posted_to_channel": True,
-                "posted_at": int(time.time()), # Time of scheduling
-                "channel_message_id": msg.message_id,
+                "posted_to_channel": False, # Not yet
                 "is_scheduled": True,
                 "scheduled_for": int(schedule_time.timestamp())
             })
@@ -793,7 +826,7 @@ async def mc_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ **Successfully Scheduled!**\n\n"
                 f"Post #{post_id} will be sent to the channel at:\n"
                 f"`{schedule_time.strftime('%Y-%m-%d %H:%M:%S')}`\n\n"
-                "_(This is handled by Telegram, so it works even if the bot is offline)_",
+                "_(Buffered by Bot Persistence)_",
                 parse_mode=ParseMode.MARKDOWN
             )
         except Exception as e:
