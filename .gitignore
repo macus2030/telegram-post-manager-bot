@@ -80,3 +80,5 @@ data.json
 # storage.py has INITIAL_DATA, so data.json is likely runtime data. 
 # Better to ignore it or commit a sample `data.example.json` if needed. 
 # But for now I'll ignore the real data.json.
+
+bot_datastore
