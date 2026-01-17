@@ -743,8 +743,11 @@ async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
-        print(f"Error in mc_render_preview: {e}\n{tb}")
-        await update.message.reply_text(f"❌ unexpected error in preview: {e}")
+        # print(f"Error in mc_render_preview: {e}\n{tb}")
+        # Send TB to user (Debug only)
+        # Truncate if too long
+        if len(tb) > 4000: tb = tb[:4000]
+        await update.message.reply_text(f"❌ unexpected error in preview: {e}\n\nTraceback:\n`{tb}`", parse_mode=ParseMode.MARKDOWN)
         return MC_INPUT_NEWS
 
 async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
