@@ -137,6 +137,7 @@ settings_conv = ConversationHandler(
         SELECT_SETTING: [
             MessageHandler(filters.Regex("^📝 Edit Message Template$"), handle_setting_selection),
             MessageHandler(filters.Regex("^🔗 Edit Help Link$"), handle_setting_selection),
+            MessageHandler(filters.Regex("^📢 Edit Main Channel Template$"), handle_setting_selection),
             MessageHandler(filters.Regex("^🔙 Back to Dashboard$"), handle_setting_selection)
         ],
         EDIT_MSG_TEMPLATE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_msg_template)],

@@ -1,4 +1,5 @@
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
+import html
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 from telegram.constants import ParseMode, ChatAction
 from config import ADMIN_ID, AUTO_DELETE_SECONDS, MAIN_CHANNEL_ID
@@ -595,7 +596,8 @@ async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "❌ Cancel": return await cancel(update, context)
     
     # Auto-apply strikethrough as requested
-    context.user_data['mc_news'] = f"<s>{text}</s>"
+    escaped_text = html.escape(text)
+    context.user_data['mc_news'] = f"<s>{escaped_text}</s>"
     return await mc_render_preview(update, context)
 
 async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -643,11 +645,15 @@ async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ["❌ Cancel"]
     ]
     
-    await update.message.reply_text(
-        f"📄 **Preview**:\n\n{preview_text}\n\nSelect an action:",
-        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
-        parse_mode=ParseMode.HTML
-    )
+    try:
+        await update.message.reply_text(
+            f"📄 **Preview**:\n\n{preview_text}\n\nSelect an action:",
+            reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Preview Error (HTML): {e}\n\nRaw Text:\n{preview_text}")
+        return MC_INPUT_NEWS
     return MC_CONFIRM
 
 async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
