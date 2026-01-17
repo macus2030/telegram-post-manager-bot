@@ -1,7 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, error
 from telegram.ext import ContextTypes, CallbackQueryHandler, CommandHandler, ConversationHandler, MessageHandler, filters
 from telegram.constants import ParseMode
-from storage import get_all_posts, get_post, update_post, delete_post, clone_post, restore_post
+from storage import get_posts_paginated, get_posts_count, get_post, update_post, delete_post, clone_post, restore_post
 from utils.helpers import check_admin, send_temp_message, show_loading
 from handlers.admin import MENU_REGEX, global_fallback, cancel
 import asyncio
@@ -19,22 +19,12 @@ async def post_manager(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_post_list(update, context, page=0, category_filter="All")
 
 async def show_post_list(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int, category_filter: str):
-    posts = get_all_posts()
+    # Optimized Pagination
+    total_posts = get_posts_count(category_filter)
+    current_page_posts = get_posts_paginated(page, PAGE_SIZE, category_filter)
     
-    # Filter
-    filtered_posts = []
-    for pid, p in posts.items():
-        if category_filter == "All" or p.get("category") == category_filter:
-            if p.get("status") != "deleted": # Don't show deleted default
-                filtered_posts.append((int(pid), p))
-    
-    # Sort by ID desc
-    filtered_posts.sort(key=lambda x: x[0], reverse=True)
-    
-    total_posts = len(filtered_posts)
     start = page * PAGE_SIZE
-    end = start + PAGE_SIZE
-    current_page_posts = filtered_posts[start:end]
+    end = start + len(current_page_posts)
     
     text = f"📝 *Post Manager* (Filter: {category_filter})\n\n"
     

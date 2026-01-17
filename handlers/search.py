@@ -1,7 +1,7 @@
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
 from telegram.constants import ParseMode
-from storage import get_all_posts, get_post
+from storage import search_posts, get_post
 from utils.helpers import check_admin
 
 # States
@@ -20,20 +20,22 @@ async def start_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text.lower().strip()
-    posts = get_all_posts()
     
-    results = []
+    # Use SQL based search
+    # Limit default 20 for search results
+    results_raw = search_posts(query, limit=20)
     
-    # 1. Direct ID match
-    if query.isdigit() and query in posts:
-        results.append((query, posts[query]))
+    # Convert list of tuples to list of (pid, p)
+    # search_posts returns [(id, data), ...]
+    # We just need to iterate
+    results = results_raw
     
-    # 2. Search Text
-    else:
-        for pid, p in posts.items():
-            content = (p.get('caption', '') + p.get('link', '') + p.get('file_name', '')).lower()
-            if query in content:
-                results.append((pid, p))
+    # Existing code expected dict or list of (pid, p)
+    # logic below:
+    # 1. Direct ID match was handled manually, now handled by search_posts(digit)
+    # 2. Search Text handled by search_posts(wildcard)
+    
+    # So we simply use the results.
                 
     if not results:
         await update.message.reply_text("❌ No results found. Try again.")

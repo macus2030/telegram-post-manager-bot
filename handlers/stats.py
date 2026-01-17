@@ -1,31 +1,23 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
-from storage import get_all_posts
+from storage import get_post_stats
 from utils.helpers import check_admin
 
 async def stats_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_admin(update.effective_user.id): return
     
-    posts = get_all_posts()
-    total_posts = len(posts)
-    total_views = sum(p.get('views', 0) for p in posts.values())
-    active_posts = sum(1 for p in posts.values() if p.get('status') == 'active')
+    stats = get_post_stats()
     
-    # Calculate Category Stats
-    cat_counts = {}
-    for p in posts.values():
-        c = p.get('category', 'Uncategorized')
-        cat_counts[c] = cat_counts.get(c, 0) + 1
-        
-    sorted_cats = sorted(cat_counts.items(), key=lambda x: x[1], reverse=True)[:3]
-    top_cats_str = "\n".join([f"- {c}: {n} posts" for c, n in sorted_cats])
+    total_posts = stats["total_posts"]
+    total_views = stats["total_views"]
+    active_posts = stats["active_posts"]
     
-    # Top Posts
-    sorted_posts = sorted(posts.items(), key=lambda x: x[1].get('views', 0), reverse=True)[:5]
+    top_cats_str = "\n".join([f"- {c}: {n} posts" for c, n in stats["top_categories"]])
+    
     top_posts_str = ""
-    for pid, p in sorted_posts:
-        top_posts_str += f"- #{pid} ({p.get('category')}): **{p.get('views')}** views\n"
+    for p in stats["top_posts"]:
+        top_posts_str += f"- #{p['id']} ({p['category']}): **{p['views']}** views\n"
     
     text = (
         "📊 *Statistics Dashboard*\n\n"

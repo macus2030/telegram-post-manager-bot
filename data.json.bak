@@ -1,0 +1,130 @@
+{
+  "posts": {
+    "1": {
+      "type": "file",
+      "file_id": "BAACAgQAAxkBAAIBqGlqOFRckyecAjBMXtiODsIqBeRCAAKrHgACu0sAAVNg51rRVlAOBjgE",
+      "file_type": "video",
+      "file_name": "[@GautamFilms] Ikkis 2025 Hindi HDTC 1080p x264 AAC.mkv",
+      "link": null,
+      "caption": "[@GautamFilms] Ikkis 2025 Hindi HDTC 1080p x264 AAC.mkv",
+      "category": "Edu",
+      "status": "active",
+      "tags": [],
+      "views": 2,
+      "note": "",
+      "created_at": 1768568934
+    },
+    "2": {
+      "type": "link",
+      "file_id": null,
+      "file_type": null,
+      "file_name": null,
+      "link": "https://google.com",
+      "caption": "Check this link! 👇\n{link}",
+      "category": "type",
+      "status": "active",
+      "tags": [],
+      "views": 1,
+      "note": "",
+      "created_at": 1768570265
+    },
+    "3": {
+      "type": "file",
+      "file_id": "BAACAgQAAxkBAAICM2lqRpfYZZNf8x5orVZSLMqqIpopAAK_GQACJlVQUw6nCoDLzcuWOAQ",
+      "file_type": "video",
+      "file_name": "[@RunningMoviesHD] - Kalamkaval (2025) UNCUT 1080p WEB-HDRip.mkv",
+      "link": null,
+      "caption": "Post 16",
+      "category": "Bro & Sis",
+      "status": "active",
+      "tags": [],
+      "views": 1,
+      "note": "",
+      "created_at": 1768573120
+    },
+    "4": {
+      "type": "file",
+      "file_id": "BQACAgUAAxkBAAICwWlrItTgbTciLw2eop2CAAGkKXtz8wACfx0AAkObWFe2nJbOhELUWzgE",
+      "file_type": "document",
+      "file_name": "Post6.rar",
+      "link": null,
+      "caption": "Post:4\nPassword: 1089",
+      "category": "Bro & Sis",
+      "status": "active",
+      "tags": [],
+      "views": 4,
+      "note": "",
+      "created_at": 1768628968,
+      "posted_to_channel": true,
+      "posted_at": 1768630238,
+      "channel_message_id": 21
+    },
+    "5": {
+      "type": "file",
+      "file_id": "BQACAgUAAxkBAAIDK2lrK8KlonIJtDiLAVEIr8jVVO9BAAKRHQACQ5tYV7D0ii6fJV5sOAQ",
+      "file_type": "document",
+      "file_name": "Post 5.rar",
+      "link": null,
+      "caption": "Post: 5\nPassword: 1089",
+      "category": "Bro & Sis  MUST WATCH 💀",
+      "status": "active",
+      "tags": [],
+      "views": 0,
+      "note": "",
+      "created_at": 1768631256
+    }
+  },
+  "templates": {},
+  "categories": {
+    "1": {
+      "id": "1",
+      "name": "Bro & Sis"
+    },
+    "3": {
+      "id": "3",
+      "name": "MUST WATCH 💀"
+    },
+    "4": {
+      "id": "4",
+      "name": "Zoo"
+    },
+    "5": {
+      "id": "5",
+      "name": "-16"
+    },
+    "6": {
+      "id": "6",
+      "name": "😭 Best of All"
+    },
+    "7": {
+      "id": "7",
+      "name": "Indian Jabardasti"
+    },
+    "8": {
+      "id": "8",
+      "name": "School"
+    },
+    "9": {
+      "id": "9",
+      "name": "Mom & Son"
+    },
+    "10": {
+      "id": "10",
+      "name": "Lesbians"
+    },
+    "11": {
+      "id": "11",
+      "name": "Students"
+    },
+    "12": {
+      "id": "12",
+      "name": "Teen (-18)"
+    },
+    "13": {
+      "id": "13",
+      "name": "Teacher student"
+    }
+  },
+  "msg_template": "LN Post : {post_id}\n\n{caption}\n\n📂 Category: {category}\n\n\nDownload/Watch Link👇🏻 \n{link}\n{link}\n\nHow to Open \n{how_to_open_link}\n\n⏳ This message will auto-delete in {time} mins.",
+  "help_link": "https://t.me/unseen_video_for_you"
+}

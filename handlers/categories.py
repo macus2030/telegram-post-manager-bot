@@ -1,7 +1,7 @@
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
 
-from storage import get_categories, add_category, update_category, delete_category, get_category
+from storage import get_categories, add_category, update_category, delete_category
 from utils.helpers import check_admin, send_temp_message
 
 # Conversation States
