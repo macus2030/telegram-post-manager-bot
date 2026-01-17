@@ -64,6 +64,12 @@ async def global_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
          await update.message.reply_text("🔄 Switching modes... Please click **Create Post** again.", parse_mode="Markdown")
          return ConversationHandler.END
          
+    elif text == "⏳ Scheduled Posts":
+         # We need to import the handler. But checking other imports, we typically import inside function to avoid circular deps if needed.
+         # But scheduled_dashboard is in this file (admin.py) at the bottom? No, I defined it in admin.py previously.
+         await scheduled_dashboard(update, context)
+         return ConversationHandler.END
+
     elif text == "📦 Bulk Create":
          await update.message.reply_text("🔄 Switching modes... Please click **Bulk Create** again.", parse_mode="Markdown")
          return ConversationHandler.END
