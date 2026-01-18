@@ -300,7 +300,7 @@ async def edit_sched_date_input(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text(
             f"📅 Selected: **Today** ({selected_date.strftime('%d-%m-%Y')})\n\n"
             "⏰ Enter Time in **HH:MM** format (24 hours):",
-             reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True),
+             reply_markup=ReplyKeyboardMarkup([["⬅️ Change Date", "❌ Cancel"]], resize_keyboard=True),
              parse_mode=ParseMode.MARKDOWN
         )
         context.user_data['edit_sched_date'] = selected_date.isoformat()
@@ -339,7 +339,7 @@ async def edit_sched_date_input(update: Update, context: ContextTypes.DEFAULT_TY
              await update.message.reply_text(
                 f"📅 Selected: **{selected_date.strftime('%d-%m-%Y')}**\n\n"
                 "⏰ Enter Time in **HH:MM** format (24 hours):",
-                 reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True),
+                 reply_markup=ReplyKeyboardMarkup([["⬅️ Change Date", "❌ Cancel"]], resize_keyboard=True),
                  parse_mode=ParseMode.MARKDOWN
             )
              return SCHED_TIME
@@ -359,6 +359,16 @@ async def edit_sched_time_input(update: Update, context: ContextTypes.DEFAULT_TY
         return ConversationHandler.END
         
     pid = context.user_data.get('sched_edit_pid')
+    
+    if text == "⬅️ Change Date":
+        await update.message.reply_text(
+            f"⏳ **Update Time for #{pid}**\n\n"
+            "Please select the **Date** for the schedule:",
+            reply_markup=ReplyKeyboardMarkup([["📅 Today", "🗓 Custom Date"], ["❌ Cancel"]], resize_keyboard=True),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return SCHED_DATE
+
     date_str = context.user_data.get('edit_sched_date')
     if not date_str:
         await update.message.reply_text("⚠ Session Error. Please start over.")
@@ -1255,7 +1265,7 @@ async def mc_sched_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(
             f"📅 Selected: **Today** ({selected_date.strftime('%d-%m-%Y')})\n\n"
             "⏰ Enter Time in **HH:MM** format (24 hours):",
-             reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True),
+             reply_markup=ReplyKeyboardMarkup([["⬅️ Change Date", "❌ Cancel"]], resize_keyboard=True),
              parse_mode=ParseMode.MARKDOWN
         )
         context.user_data['temp_sched_date'] = selected_date.isoformat()
@@ -1295,7 +1305,7 @@ async def mc_sched_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE
              await update.message.reply_text(
                 f"📅 Selected: **{selected_date.strftime('%d-%m-%Y')}**\n\n"
                 "⏰ Enter Time in **HH:MM** format (24 hours):",
-                 reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True),
+                 reply_markup=ReplyKeyboardMarkup([["⬅️ Change Date", "❌ Cancel"]], resize_keyboard=True),
                  parse_mode=ParseMode.MARKDOWN
             )
              context.user_data['temp_sched_date'] = selected_date.isoformat()
@@ -1312,6 +1322,15 @@ async def mc_sched_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def mc_sched_time_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if text == "❌ Cancel": return await cancel(update, context)
+    
+    if text == "⬅️ Change Date":
+        await update.message.reply_text(
+            "⏳ **Schedule Post**\n\n"
+            "Please select the **Date** for the schedule:",
+            reply_markup=ReplyKeyboardMarkup([["📅 Today", "🗓 Custom Date"], ["❌ Cancel"]], resize_keyboard=True),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return MC_SCHED_DATE
     
     date_str = context.user_data.get('temp_sched_date')
     if not date_str:
