@@ -6,6 +6,7 @@ from config import ADMIN_ID, AUTO_DELETE_SECONDS, MAIN_CHANNEL_ID
 from storage import add_post, save_template, get_templates, get_message_template, get_help_link, get_post, get_main_template, update_post, get_latest_post_id, get_last_news, save_last_news
 from utils.helpers import send_temp_message, show_loading, escape_markdown_v2, check_admin, validate_link
 import time
+import logging
 
 # States
 SELECT_TYPE, UPLOAD_FILE, INPUT_LINK, EDIT_CAPTION, INPUT_PASSWORD, SELECT_CATEGORY, CONFIRM = range(7)
