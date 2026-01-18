@@ -73,11 +73,14 @@ A robust Telegram bot for managing channels, creating posts with file attachment
     *   **Timer**: Set a custom auto-delete timer for each post.
     *   **Secure Link**: The bot generates a safe, obfuscated link for you to share.
 
-## Project Structure
+## 💾 Backup & Restore (Free Tier Support)
+Since free hosting platforms (like Render Free) wipe data on every deploy, use this feature to keep your data safe:
+1.  **Backup**: Go to `Backup & Export` -> `📥 Download Backup` to save your `bot.db` file.
+2.  **Restore**: After redeploying, go to `Backup & Export` -> `📤 Import / Restore` and upload your file.
+
+## 🛠 Tech Stackructure
 
 *   `bot.py`: Main entry point.
 *   `handlers/`: Contains logic for Admin, User, Manager, Broadcast, and Settings.
 *   `storage.py`: Handles SQLite database operations.
-*   `config.py`: Configuration loader.
-
 
