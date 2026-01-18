@@ -907,13 +907,30 @@ async def mc_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             mins = int(text)
             delay_seconds = mins * 60
         elif ":" in text:
-            # HH:MM Parsing
-            now = datetime.datetime.now()
-            target_time = datetime.datetime.strptime(text, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
-            if target_time < now:
-                await update.message.reply_text("⚠ Time passed. Please use future time.")
-                return MC_SCHEDULE
-            delay_seconds = (target_time - now).total_seconds()
+            # HH:MM Parsing (Assume IST input)
+            # Render Server Time is UTC. IST is UTC+5:30.
+            
+            now_utc = datetime.datetime.utcnow()
+            now_ist = now_utc + datetime.timedelta(hours=5, minutes=30)
+            
+            try:
+                target_parsed = datetime.datetime.strptime(text, "%H:%M")
+            except ValueError:
+                 # Try with AM/PM if needed, but stick to 24h for now or add formats
+                 target_parsed = datetime.datetime.strptime(text, "%I:%M %p") # Try 12h format? 
+                 # Let's keep it simple first as per error message instructions
+            
+            # Create target time in IST today
+            target_ist = now_ist.replace(hour=target_parsed.hour, minute=target_parsed.minute, second=0, microsecond=0)
+            
+            if target_ist < now_ist:
+                # Assume tomorrow
+                target_ist += datetime.timedelta(days=1)
+                
+            # Convert back to UTC for delay calculation
+            target_utc = target_ist - datetime.timedelta(hours=5, minutes=30)
+            
+            delay_seconds = (target_utc - now_utc).total_seconds()
         else:
             raise ValueError("Invalid format")
             
@@ -1015,31 +1032,73 @@ async def mc_schedule_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
                 "retry_count": 0
             })
             
-            # JobQueue
-            context.job_queue.run_once(
-                send_scheduled_post_job, 
-                delay_seconds,
-                chat_id=target_chat_id,
-                name=f"sched_{post_id}",
-                data={
-                    "chat_id": target_chat_id,
-                    "text": preview_text,
-                    "post_id": post_id
-                }
-            )
-            
-            await update.message.reply_text(
-                f"✅ **Scheduled Successfully!**\n"
-                f"at `{ist_time.strftime('%Y-%m-%d %I:%M %p')} IST`",
-                parse_mode=ParseMode.MARKDOWN
-            )
-        except Exception as e:
-            await update.message.reply_text(f"❌ Error: {e}")
-            
-        await admin_dashboard(update, context)
-        return ConversationHandler.END
+
+async def mc_schedule_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        text = update.message.text
+        if text == "❌ Cancel": return await cancel(update, context)
         
-    return await cancel(update, context)
+        if text == "✏ Edit Time":
+            await update.message.reply_text("Enter new delay (minutes) or HH:MM:")
+            return MC_SCHEDULE
+
+        if text == "✅ Confirm Schedule":
+            # Actuate
+            post_id = context.user_data['mc_post_id']
+            preview_text = context.user_data['mc_preview_text']
+            delay_seconds = context.user_data['temp_delay_seconds']
+            schedule_time_ts = context.user_data['temp_schedule_time']
+            
+            target_chat_id = MAIN_CHANNEL_ID
+            
+            # IST for final message
+            schedule_time = datetime.datetime.fromtimestamp(schedule_time_ts)
+            ist_time = schedule_time + datetime.timedelta(hours=5, minutes=30)
+            
+            try:
+                 # Update DB
+                update_post(post_id, {
+                    "posted_to_channel": False, 
+                    "is_scheduled": True,
+                    "scheduled_for": int(schedule_time_ts),
+                    "channel_preview_text": preview_text,
+                    "target_chat_id": target_chat_id,
+                    "status": "pending",
+                    "retry_count": 0
+                })
+                
+                # JobQueue
+                context.job_queue.run_once(
+                    send_scheduled_post_job, 
+                    delay_seconds,
+                    chat_id=target_chat_id,
+                    name=f"sched_{post_id}",
+                    data={
+                        "chat_id": target_chat_id,
+                        "text": preview_text,
+                        "post_id": post_id
+                    }
+                )
+                
+                await update.message.reply_text(
+                    f"✅ **Scheduled Successfully!**\n"
+                    f"at `{ist_time.strftime('%Y-%m-%d %I:%M %p')} IST`",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            except Exception as e:
+                import traceback
+                logging.error(f"Schedule Confirm Error: {e}", exc_info=True)
+                await update.message.reply_text(f"❌ Error during schedule execution: {e}")
+                
+            await admin_dashboard(update, context)
+            return ConversationHandler.END
+            
+        return await cancel(update, context)
+    except Exception as e:
+        import traceback
+        logging.error(f"Schedule Confirm Global Error: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Critical Error in Confirm: {e}")
+        return ConversationHandler.END
 
 
 
