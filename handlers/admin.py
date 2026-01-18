@@ -999,38 +999,6 @@ async def mc_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Error in schedule input: {e}\n\nTraceback:\n`{tb}`", parse_mode=ParseMode.MARKDOWN)
         return MC_SCHEDULE
 
-async def mc_schedule_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if text == "❌ Cancel": return await cancel(update, context)
-    
-    if text == "✏ Edit Time":
-        await update.message.reply_text("Enter new delay (minutes) or HH:MM:")
-        return MC_SCHEDULE
-
-    if text == "✅ Confirm Schedule":
-        # Actuate
-        post_id = context.user_data['mc_post_id']
-        preview_text = context.user_data['mc_preview_text']
-        delay_seconds = context.user_data['temp_delay_seconds']
-        schedule_time_ts = context.user_data['temp_schedule_time']
-        
-        target_chat_id = MAIN_CHANNEL_ID
-        
-        # IST for final message
-        schedule_time = datetime.datetime.fromtimestamp(schedule_time_ts)
-        ist_time = schedule_time + datetime.timedelta(hours=5, minutes=30)
-        
-        try:
-             # Update DB
-            update_post(post_id, {
-                "posted_to_channel": False, 
-                "is_scheduled": True,
-                "scheduled_for": int(schedule_time_ts),
-                "channel_preview_text": preview_text,
-                "target_chat_id": target_chat_id,
-                "status": "pending",
-                "retry_count": 0
-            })
             
 
 async def mc_schedule_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
