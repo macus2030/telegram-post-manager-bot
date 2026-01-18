@@ -12,7 +12,7 @@ import datetime
 # States
 SELECT_TYPE, UPLOAD_FILE, INPUT_LINK, EDIT_CAPTION, INPUT_PASSWORD, SELECT_CATEGORY, CONFIRM, INPUT_TIMER = range(8)
 # Main Channel Flow States
-MC_INPUT_ID, MC_INPUT_LINK, MC_INPUT_NEWS, MC_CONFIRM, MC_SCHEDULE, MC_SCHEDULE_CONFIRM = range(6, 12)
+MC_INPUT_ID, MC_INPUT_LINK, MC_INPUT_NEWS, MC_CONFIRM, MC_SCHEDULE, MC_SCHED_DATE, MC_SCHED_TIME, MC_SCHEDULE_CONFIRM = range(6, 14)
 
 # Keyboards
 DASHBOARD_KB = [
@@ -176,7 +176,7 @@ async def scheduled_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(text, reply_markup=current_reply_markup, parse_mode=ParseMode.MARKDOWN)
 
 # --- SCHEDULE SCHEDULE ACTIONS ---
-SCHED_UPDATE_TIME = 100
+SCHED_DATE, SCHED_TIME = range(100, 102)
 
 async def handle_schedule_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -272,14 +272,86 @@ async def start_edit_schedule_time(update: Update, context: ContextTypes.DEFAULT
     context.user_data['sched_edit_pid'] = pid
     
     await query.answer()
+    await query.answer()
     await query.message.reply_text(
         f"⏳ **Update Time for #{pid}**\n\n"
-        "Enter new delay in minutes (e.g., `10`) or time `HH:MM`:",
-        reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True)
+        "Please select the **Date** for the schedule:",
+        reply_markup=ReplyKeyboardMarkup([["📅 Today", "🗓 Custom Date"], ["❌ Cancel"]], resize_keyboard=True),
+        parse_mode=ParseMode.MARKDOWN
     )
-    return SCHED_UPDATE_TIME
+    return SCHED_DATE
 
-async def save_schedule_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def edit_sched_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text == "❌ Cancel":
+        await update.message.reply_text("❌ Edit Cancelled.")
+        await admin_dashboard(update, context)
+        return ConversationHandler.END
+        
+    import datetime
+    now_utc = datetime.datetime.utcnow()
+    ist_offset = datetime.timedelta(hours=5, minutes=30)
+    now_ist = now_utc + ist_offset
+    
+    selected_date = None
+    
+    if text == "📅 Today":
+        selected_date = now_ist.date()
+        await update.message.reply_text(
+            f"📅 Selected: **Today** ({selected_date.strftime('%d-%m-%Y')})\n\n"
+            "⏰ Enter Time in **HH:MM** format (24 hours):",
+             reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True),
+             parse_mode=ParseMode.MARKDOWN
+        )
+        context.user_data['edit_sched_date'] = selected_date.isoformat()
+        return SCHED_TIME
+        
+    elif text == "🗓 Custom Date":
+        await update.message.reply_text(
+            "🗓 Enter Date in **DD/MM/YYYY** format:",
+            reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return SCHED_DATE
+        
+    else:
+        # Validate DD/MM/YYYY
+        import re
+        date_pattern = r"^(0[1-9]|[12][0-9]|3[01])/(0[1-9]|1[0-2])/(19|20)\d{2}$"
+        
+        if not re.match(date_pattern, text):
+             await update.message.reply_text(
+                 "❌ Invalid input.\n"
+                 "Expected format: DD/MM/YYYY\n"
+                 "Example: 20/01/2026"
+             )
+             return SCHED_DATE
+             
+        try:
+             d = datetime.datetime.strptime(text, "%d/%m/%Y").date()
+             if d < now_ist.date():
+                 await update.message.reply_text("⚠ Date cannot be in the past. Try again.")
+                 return SCHED_DATE
+                 
+             selected_date = d
+             context.user_data['edit_sched_date'] = selected_date.isoformat()
+             
+             await update.message.reply_text(
+                f"📅 Selected: **{selected_date.strftime('%d-%m-%Y')}**\n\n"
+                "⏰ Enter Time in **HH:MM** format (24 hours):",
+                 reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True),
+                 parse_mode=ParseMode.MARKDOWN
+            )
+             return SCHED_TIME
+        except ValueError:
+             await update.message.reply_text(
+                 "❌ Invalid input.\n"
+                 "Expected format: DD/MM/YYYY\n"
+                 "Example: 20/01/2026"
+             )
+             return SCHED_DATE
+
+async def edit_sched_time_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if text == "❌ Cancel":
         await update.message.reply_text("❌ Edit Cancelled.")
@@ -287,48 +359,65 @@ async def save_schedule_time(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ConversationHandler.END
         
     pid = context.user_data.get('sched_edit_pid')
-    
-    # Parse time (Reuse logic from mc_schedule_input? Simplified here)
-    delay_seconds = 0
+    date_str = context.user_data.get('edit_sched_date')
+    if not date_str:
+        await update.message.reply_text("⚠ Session Error. Please start over.")
+        return await admin_dashboard(update, context)
+        
     import datetime
+    selected_date = datetime.date.fromisoformat(date_str)
+    
+    # Strict Time Validation
+    import re
+    time_pattern = r"^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$"
+    
+    if not re.match(time_pattern, text):
+         await update.message.reply_text(
+             "❌ Invalid time format.\n"
+             "Please enter time in 24h format (HH:MM)\n"
+             "Example: 09:30 or 21:45"
+         )
+         return SCHED_TIME
+         
     try:
-        if text.isdigit():
-            mins = int(text)
-            delay_seconds = mins * 60
-        elif ":" in text:
-            now = datetime.datetime.now() # UTC usually on server?
-            # User Input: HH:MM is IST
-            # Server Now: UTC or Local? 
-            # In mc_schedule_input we did:
-            # 1. Parse text as HH:MM
-            # 2. Treat that time as IST
-            # 3. Convert IST -> UTC
-            # 4. UTC - Now(UTC) = Delay
-            
-            # Let's copy logic
-            ist_offset = datetime.timedelta(hours=5, minutes=30)
-            utc_now = datetime.datetime.utcnow()
-            ist_now = utc_now + ist_offset
-            
-            target_time_ist = datetime.datetime.strptime(text, "%H:%M").replace(
-                year=ist_now.year, month=ist_now.month, day=ist_now.day
-            )
-            
-            if target_time_ist < ist_now:
-                 target_time_ist += datetime.timedelta(days=1)
-                 
-            # IST -> UTC
-            target_time_utc = target_time_ist - ist_offset
-            delay_seconds = (target_time_utc - utc_now).total_seconds()
-            
-        else:
-            raise ValueError("Invalid format")
-            
-        if delay_seconds < 10:
-             await update.message.reply_text("⚠ Time must be in the future. Try again.")
-             return SCHED_UPDATE_TIME
+        parts = text.split(":")
+        hour = int(parts[0])
+        minute = int(parts[1])
+        
+        # Construct Target
+        target_ist = datetime.datetime.combine(selected_date, datetime.time(hour, minute))
+        
+        # Check Future
+        now_utc = datetime.datetime.utcnow()
+        ist_offset = datetime.timedelta(hours=5, minutes=30)
+        now_ist = now_utc + ist_offset
+        
+        if target_ist <= now_ist:
+             await update.message.reply_text("⚠ Scheduled time must be in the future.")
+             return SCHED_TIME
+             
+        # Calculate Delay
+        target_utc = target_ist - ist_offset
+        delay_seconds = (target_utc - now_utc).total_seconds()
+        
+        # Warn Conflict (Reuse logic)
+        from storage import get_pending_scheduled_posts
+        try:
+            pending = get_pending_scheduled_posts()
+            for p_id, data in pending:
+                if str(p_id) == str(pid): continue 
+                existing_ts = data.get("scheduled_for")
+                if existing_ts:
+                    diff = abs(target_utc.timestamp() - int(existing_ts))
+                    if diff < 300:
+                         await update.message.reply_text(
+                             "⚠️ **Warning: Another post is scheduled within 5 minutes.**\n"
+                             "Updating anyway..."
+                         )
+                         break
+        except: pass
 
-        # Re-Schedule
+        # Re-Schedule Logic
         jobs = context.job_queue.get_jobs_by_name(f"sched_{pid}")
         for j in jobs: j.schedule_removal()
         
@@ -336,12 +425,13 @@ async def save_schedule_time(update: Update, context: ContextTypes.DEFAULT_TYPE)
         target_chat_id = post.get("target_chat_id")
         preview_text = post.get("channel_preview_text")
         
-        scheduled_for_ts = datetime.datetime.utcnow().timestamp() + delay_seconds
-        
+        # Update DB
+        scheduled_for_ts = target_utc.timestamp()
         update_post(pid, {
             "scheduled_for": int(scheduled_for_ts)
         })
         
+        # New Job
         context.job_queue.run_once(
             send_scheduled_post_job, 
             delay_seconds,
@@ -354,20 +444,23 @@ async def save_schedule_time(update: Update, context: ContextTypes.DEFAULT_TYPE)
             }
         )
         
-        new_ist = datetime.datetime.fromtimestamp(scheduled_for_ts) + datetime.timedelta(hours=5, minutes=30)
-        
-        await update.message.reply_text(f"✅ **Updated!** New time: `{new_ist.strftime('%d-%b %I:%M %p')} IST`", parse_mode=ParseMode.MARKDOWN)
+        new_ist_str = target_ist.strftime('%d-%b %I:%M %p')
+        await update.message.reply_text(f"✅ **Updated!** New time: `{new_ist_str} IST`", parse_mode=ParseMode.MARKDOWN)
         await admin_dashboard(update, context)
         return ConversationHandler.END
-
+        
+    except ValueError:
+         await update.message.reply_text("❌ Error processing time.")
+         return SCHED_TIME
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")
-        return SCHED_UPDATE_TIME
+        return SCHED_TIME
 
 sched_edit_conv = ConversationHandler(
     entry_points=[CallbackQueryHandler(start_edit_schedule_time, pattern="^sched_edit_")],
     states={
-        SCHED_UPDATE_TIME: [MessageHandler(filters.TEXT, save_schedule_time)]
+        SCHED_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_sched_date_input)],
+        SCHED_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_sched_time_input)]
     },
     fallbacks=[CommandHandler("cancel", cancel)]
 )
@@ -1080,12 +1173,11 @@ async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         await update.message.reply_text(
             "⏳ **Schedule Post**\n\n"
-            "Enter delay in **minutes** (e.g., `10`, `60`)\n"
-            "OR time in `HH:MM` format (24h, future time today).",
-            reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True),
+            "Please select the **Date** for the schedule:",
+            reply_markup=ReplyKeyboardMarkup([["📅 Today", "🗓 Custom Date"], ["❌ Cancel"]], resize_keyboard=True),
             parse_mode=ParseMode.MARKDOWN
         )
-        return MC_SCHEDULE
+        return MC_SCHED_DATE
 
     return MC_CONFIRM
 
@@ -1146,71 +1238,141 @@ async def send_scheduled_post_job(context: ContextTypes.DEFAULT_TYPE):
                  "note": f"Failed after 3 retries. Error: {e}"
              })
 
-async def mc_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def mc_sched_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if text == "❌ Cancel": return await cancel(update, context)
     
-    if text == "✅ Yes, Schedule":
-         await update.message.reply_text("Enter time:")
-         return MC_SCHEDULE
-         
     import datetime
-    delay_seconds = 0
+    now_utc = datetime.datetime.utcnow()
+    # IST Offset
+    ist_offset = datetime.timedelta(hours=5, minutes=30)
+    now_ist = now_utc + ist_offset
+    
+    selected_date = None # store as date object
+    
+    if text == "📅 Today":
+        selected_date = now_ist.date()
+        await update.message.reply_text(
+            f"📅 Selected: **Today** ({selected_date.strftime('%d-%m-%Y')})\n\n"
+            "⏰ Enter Time in **HH:MM** format (24 hours):",
+             reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True),
+             parse_mode=ParseMode.MARKDOWN
+        )
+        context.user_data['temp_sched_date'] = selected_date.isoformat()
+        return MC_SCHED_TIME
+        
+    elif text == "🗓 Custom Date":
+        await update.message.reply_text(
+            "🗓 Enter Date in **DD/MM/YYYY** format:",
+            reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return MC_SCHED_DATE # Stay in this state to receive text input
+        
+    else:
+        # Validate DD/MM/YYYY using Regex and Parsing
+        import re
+        date_pattern = r"^(0[1-9]|[12][0-9]|3[01])/(0[1-9]|1[0-2])/(19|20)\d{2}$"
+        
+        if not re.match(date_pattern, text):
+             await update.message.reply_text(
+                 "❌ Invalid input.\n"
+                 "Expected format: DD/MM/YYYY\n"
+                 "Example: 20/01/2026"
+             )
+             return MC_SCHED_DATE
+
+        try:
+             # Parse
+             d = datetime.datetime.strptime(text, "%d/%m/%Y").date()
+             
+             # Check for past date
+             if d < now_ist.date():
+                 await update.message.reply_text("⚠ Date cannot be in the past. Try again.")
+                 return MC_SCHED_DATE
+                 
+             selected_date = d
+             await update.message.reply_text(
+                f"📅 Selected: **{selected_date.strftime('%d-%m-%Y')}**\n\n"
+                "⏰ Enter Time in **HH:MM** format (24 hours):",
+                 reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True),
+                 parse_mode=ParseMode.MARKDOWN
+            )
+             context.user_data['temp_sched_date'] = selected_date.isoformat()
+             return MC_SCHED_TIME
+             
+        except ValueError:
+            await update.message.reply_text(
+                 "❌ Invalid input.\n"
+                 "Expected format: DD/MM/YYYY\n"
+                 "Example: 20/01/2026"
+            )
+            return MC_SCHED_DATE
+
+async def mc_sched_time_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text == "❌ Cancel": return await cancel(update, context)
+    
+    date_str = context.user_data.get('temp_sched_date')
+    if not date_str:
+        await update.message.reply_text("⚠ Session Error. Please start over.")
+        return await admin_dashboard(update, context)
+        
+    import datetime
+    selected_date = datetime.date.fromisoformat(date_str)
     
     try:
-        # Try minutes integer
-        if text.isdigit():
-            mins = int(text)
-            delay_seconds = mins * 60
-        elif ":" in text:
-            # HH:MM Parsing (Assume IST input)
-            # Render Server Time is UTC. IST is UTC+5:30.
-            
-            now_utc = datetime.datetime.utcnow()
-            now_ist = now_utc + datetime.timedelta(hours=5, minutes=30)
-            
-            try:
-                target_parsed = datetime.datetime.strptime(text, "%H:%M")
-            except ValueError:
-                 # Try with AM/PM if needed, but stick to 24h for now or add formats
-                 target_parsed = datetime.datetime.strptime(text, "%I:%M %p") # Try 12h format? 
-                 # Let's keep it simple first as per error message instructions
-            
-            # Create target time in IST today
-            target_ist = now_ist.replace(hour=target_parsed.hour, minute=target_parsed.minute, second=0, microsecond=0)
-            
-            if target_ist < now_ist:
-                # Assume tomorrow
-                target_ist += datetime.timedelta(days=1)
-                
-            # Convert back to UTC for delay calculation
-            target_utc = target_ist - datetime.timedelta(hours=5, minutes=30)
-            
-            delay_seconds = (target_utc - now_utc).total_seconds()
-        else:
-            raise ValueError("Invalid format")
-            
-    except ValueError:
-        await update.message.reply_text("❌ Invalid format. Use Minutes (int) or HH:MM.")
-        return MC_SCHEDULE
+        # PURE STRICT VALIDATION
+        # Regex for HH:MM (00-23 : 00-59)
+        import re
+        # This regex ensures:
+        # 1. Hours: 00-19 OR 20-23
+        # 2. Minutes: 00-59
+        # 3. Two digits MANDATORY (Reject 9:30)
+        time_pattern = r"^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$"
+        
+        if not re.match(time_pattern, text):
+             await update.message.reply_text(
+                 "❌ Invalid time format.\n"
+                 "Please enter time in 24h format (HH:MM)\n"
+                 "Example: 09:30 or 21:45"
+             )
+             return MC_SCHED_TIME
 
-    try:
-        if delay_seconds <= 0:
-             await update.message.reply_text("⚠ Invalid time. Must be in the future.")
-             return MC_SCHEDULE
-
-        # Schedule Job
+        # Safe to parse now
+        parts = text.split(":")
+        hour = int(parts[0])
+        minute = int(parts[1])
+        
+        # Logic check (Regex covers range, but safety first)
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+             await update.message.reply_text("❌ Invalid time (00-23 hours, 00-59 minutes).")
+             return MC_SCHED_TIME
+             
+        # Construct Target IST Datetime
+        target_ist = datetime.datetime.combine(selected_date, datetime.time(hour, minute))
+        
+        # Check against Now (IST)
+        now_utc = datetime.datetime.utcnow()
+        ist_offset = datetime.timedelta(hours=5, minutes=30)
+        now_ist = now_utc + ist_offset
+        
+        if target_ist <= now_ist:
+             await update.message.reply_text("⚠ Scheduled time must be in the future.")
+             return MC_SCHED_TIME
+             
+        # Calculate Delay (for JobQueue, which uses UTC/Server time usually, or relative seconds)
+        # We need relative seconds from NOW (Server Time)
+        # Target(IST) -> convert to UTC -> compare with Now(UTC)
+        
+        target_utc = target_ist - ist_offset
+        delay_seconds = (target_utc - now_utc).total_seconds()
+        
+        # Proceed to Confirmation
         post_id = context.user_data['mc_post_id']
-        preview_text = context.user_data['mc_preview_text']
         
-        # Calculate Future Time
-        schedule_time = datetime.datetime.now() + datetime.timedelta(seconds=delay_seconds)
-        
-        # Store temporary schedule data
-        context.user_data['temp_schedule_time'] = schedule_time.timestamp()
-        context.user_data['temp_delay_seconds'] = delay_seconds
-        
-        # Validation: Conflict Detection (Same as before)
+        # Check Conflicts
+        from storage import get_pending_scheduled_posts
         try:
             pending = get_pending_scheduled_posts()
             warnings = ""
@@ -1218,42 +1380,38 @@ async def mc_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if pid == post_id: continue 
                 existing_time_ts = data.get("scheduled_for")
                 if existing_time_ts:
-                    existing_time = datetime.datetime.fromtimestamp(existing_time_ts)
-                    diff = abs((schedule_time - existing_time).total_seconds())
+                    existing_time_ts = int(existing_time_ts) # ensure int
+                    # Compare UTC timestamps
+                    diff = abs(target_utc.timestamp() - existing_time_ts)
                     if diff < 300: 
-                        warnings += f"\n⚠ **Conflict**: Post #{pid} is within 5 mis of this."
+                        warnings = "\n⚠️ **Warning: Another post is scheduled within 5 minutes.**\nDo you want to continue?"
+                        break # One warning is enough
         except Exception as e:
-            print(f"Warning: Conflict check failed: {e}")
             warnings = ""
-
-        # IST Conversion
-        ist_time = schedule_time + datetime.timedelta(hours=5, minutes=30)
-        ist_str = ist_time.strftime('%Y-%m-%d %I:%M %p') # 06:19 PM format
+            
+        # Store Data
+        context.user_data['temp_schedule_time'] = target_utc.timestamp()
+        context.user_data['temp_delay_seconds'] = delay_seconds
         
-        channel_id = MAIN_CHANNEL_ID
-        file_info = f"Post #{post_id}" # We could fetch file name if we want rich preview
+        ist_str = target_ist.strftime('%d-%b-%Y %I:%M %p')
         
         msg_text = (
             "⏳ **Confirm Schedule**\n\n"
-            f"**Post**: {file_info}\n"
-            f"**Channel**: `{channel_id}`\n"
-            f"**Time (IST)**: `{ist_str}` (India Standard Time)\n"
-            f"**Time (UTC)**: `{schedule_time.strftime('%H:%M')}`\n"
+            f"**Post**: #{post_id}\n"
+            f"**Channel**: `{MAIN_CHANNEL_ID}`\n"
+            f"**Time (IST)**: `{ist_str}`\n"
             f"{warnings}\n"
-            "Please confirm execution."
         )
+        if not warnings:
+             msg_text += "Please confirm execution."
         
-        kb = [["✅ Confirm Schedule"], ["✏ Edit Time", "❌ Cancel"]]
+        kb = [["✅ Confirm Schedule"], ["❌ Cancel"]] # Removed "Edit Time" simple button as it's multi-step now, or we can add "✏ Edit Date/Time"
         await update.message.reply_text(msg_text, reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True), parse_mode=ParseMode.MARKDOWN)
         return MC_SCHEDULE_CONFIRM
-        
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        # Truncate if too long
-        if len(tb) > 2000: tb = tb[:2000] + "..."
-        await update.message.reply_text(f"❌ Error in schedule input: {e}\n\nTraceback:\n`{tb}`", parse_mode=ParseMode.MARKDOWN)
-        return MC_SCHEDULE
+
+    except ValueError:
+        await update.message.reply_text("❌ Invalid Time Format. Use **HH:MM** (24h).")
+        return MC_SCHED_TIME
 
             
 
@@ -1262,9 +1420,9 @@ async def mc_schedule_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
         text = update.message.text
         if text == "❌ Cancel": return await cancel(update, context)
         
-        if text == "✏ Edit Time":
-            await update.message.reply_text("Enter new delay (minutes) or HH:MM:")
-            return MC_SCHEDULE
+        if text == "✏ Edit Date/Time":
+            await update.message.reply_text("⏳ Select Date:", reply_markup=ReplyKeyboardMarkup([["📅 Today", "🗓 Custom Date"], ["❌ Cancel"]], resize_keyboard=True))
+            return MC_SCHED_DATE
 
         if text == "✅ Confirm Schedule":
             # Actuate
@@ -1335,7 +1493,8 @@ main_channel_conv = ConversationHandler(
         MC_INPUT_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_input_link)],
         MC_INPUT_NEWS: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_input_news)],
         MC_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_action)],
-        MC_SCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_schedule_input)],
+        MC_SCHED_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_sched_date_input)],
+        MC_SCHED_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_sched_time_input)],
         MC_SCHEDULE_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_schedule_confirm)]
     },
     fallbacks=[
