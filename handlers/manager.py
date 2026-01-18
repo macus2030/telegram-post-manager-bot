@@ -369,70 +369,104 @@ async def handle_manager_callback(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     data = query.data
     
-    if data.startswith("list_"):
-        _, cat, page = data.split("_")
-        await show_post_list(update, context, int(page), cat)
-        
-    elif data.startswith("view_"):
-        await view_post_detail(update, context)
-        
-    elif data.startswith("toggle_"):
-        pid = data.split("_")[1]
-        p = get_post(pid)
-        new_status = "disabled" if p.get("status") == "active" else "active"
-        update_post(pid, {"status": new_status})
-        await view_post_detail(update, context) # Refresh
-        
-    elif data.startswith("delete_"):
-        pid = data.split("_")[1]
-        delete_post(pid) # Soft delete
-        
-        kb = [[InlineKeyboardButton("↩ Undo", callback_data=f"undo_{pid}")]]
-        await query.edit_message_text(f"🗑 Post #{pid} deleted.", reply_markup=InlineKeyboardMarkup(kb))
-        
-        # Schedule cleanup
-        context.application.create_task(cleanup_undo_button(update, context, pid))
+    # helper to ensure we answer
+    async def try_answer(text=None, alert=False):
+        try:
+            await query.answer(text=text, show_alert=alert)
+        except:
+             pass
 
-    elif data.startswith("undo_"):
-        pid = data.split("_")[1]
-        restore_post(pid)
-        await query.answer("✅ Restored!")
-        # Go back to details
-        await render_post_detail(update, context, pid)
-        
-    elif data.startswith("clone_"):
-        pid = data.split("_")[1]
-        new_id = clone_post(pid)
-        await query.answer(f"✅ Cloned to #{new_id}")
-        # Go to new post
-        query.data = f"view_{new_id}"
-        await view_post_detail(update, context)
+    try:
+        if data.startswith("list_"):
+            # We should answer to stop spinner
+            await try_answer()
+            _, cat, page = data.split("_")
+            await show_post_list(update, context, int(page), cat)
+            
+        elif data.startswith("view_"):
+            # view_post_detail answers itself, but safe to answer here too if we want?
+            # view_post_detail calls answer(). Let's leave it.
+            await view_post_detail(update, context)
+            
+        elif data.startswith("toggle_"):
+            # logic updates db then calls view_post_detail
+            # view_post_detail calls answer.
+            pid = data.split("_")[1]
+            p = get_post(pid)
+            if p:
+                new_status = "disabled" if p.get("status") == "active" else "active"
+                update_post(pid, {"status": new_status})
+            await view_post_detail(update, context)
+            
+        elif data.startswith("delete_"):
+            await try_answer("Deleting...")
+            pid = data.split("_")[1]
+            delete_post(pid) # Soft delete
+            
+            kb = [[InlineKeyboardButton("↩ Undo", callback_data=f"undo_{pid}")]]
+            try:
+                await query.edit_message_text(f"🗑 Post #{pid} deleted.", reply_markup=InlineKeyboardMarkup(kb))
+            except Exception:
+                await try_answer("Could not edit message", alert=True)
+            
+            # Schedule cleanup
+            context.application.create_task(cleanup_undo_button(update, context, pid))
 
-    elif data.startswith("preview_"):
-        pid = data.split("_")[1]
-        post = get_post(pid)
-        # Send actual content temp
-        await query.answer("Sent preview below 👇")
-        # Logic similar to user handler but for admin
-        caption = f"[PREVIEW] {post.get('caption')}"
-        if post.get('type') == 'file':
-            await context.bot.send_document(chat_id=update.effective_chat.id, document=post.get('file_id'), caption=caption)
-        else:
-             await context.bot.send_message(chat_id=update.effective_chat.id, text=f"{caption}\n{post.get('link')}")
+        elif data.startswith("undo_"):
+            pid = data.split("_")[1]
+            restore_post(pid)
+            await try_answer("✅ Restored!")
+            # Go back to details
+            await render_post_detail(update, context, pid)
+            
+        elif data.startswith("clone_"):
+            pid = data.split("_")[1]
+            new_id = clone_post(pid)
+            await try_answer(f"✅ Cloned to #{new_id}")
+            # Go to new post
+            # modify query.data so view_post_detail sees new id?
+            # view_post_detail reads query.data.split("_")[1]
+            # We can't easily modify read-only object properties usually.
+            # Call render_post_detail directly? Yes.
+            await render_post_detail(update, context, str(new_id))
 
-    elif data.startswith("copy_"):
-        pid = data.split("_")[1]
-        bot_username = context.bot.username
-        link = f"https://t.me/{bot_username}?start={pid}"
-        await query.answer(link, show_alert=True) # Mobile users can copy from alert? Or just send text.
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"`{link}`", parse_mode=ParseMode.MARKDOWN)
+        elif data.startswith("preview_"):
+            pid = data.split("_")[1]
+            post = get_post(pid)
+            if not post:
+                await try_answer("Post not found", alert=True)
+                return
+                
+            await try_answer("Sent preview below 👇")
+            
+            caption = f"[PREVIEW] {post.get('caption')}"
+            try:
+                if post.get('type') == 'file':
+                    await context.bot.send_document(chat_id=update.effective_chat.id, document=post.get('file_id'), caption=caption)
+                else:
+                    await context.bot.send_message(chat_id=update.effective_chat.id, text=f"{caption}\n{post.get('link')}")
+            except Exception as e:
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ Preview failed: {e}")
 
-    elif data == "dashboard_return":
-        from handlers.admin import admin_dashboard
-        await admin_dashboard(update, context)
-        # We might need to delete the inline message or just leave it?
-        # Usually good to leave it as history.
-        return ConversationHandler.END
+        elif data.startswith("copy_"):
+            pid = data.split("_")[1]
+            bot_username = context.bot.username
+            link = f"https://t.me/{bot_username}?start={pid}"
+            await try_answer(link, alert=True) 
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"`{link}`", parse_mode=ParseMode.MARKDOWN)
+
+        elif data == "dashboard_return":
+            # admin_dashboard handles answer now?
+            # handlers/admin.py admin_dashboard checks if update.callback_query and answers.
+            from handlers.admin import admin_dashboard
+            await admin_dashboard(update, context)
+            return ConversationHandler.END
+            
+    except Exception as e:
+        import traceback
+        logging.error(f"Manager Callback Error: {e}", exc_info=True)
+        await try_answer(f"❌ Error: {e}", alert=True)
+
 
 async def cleanup_undo_button(update: Update, context: ContextTypes.DEFAULT_TYPE, pid: str):
     await asyncio.sleep(10)
