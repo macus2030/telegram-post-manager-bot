@@ -992,15 +992,19 @@ async def mc_input_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['mc_post_id'] = post_id
     
     # Generate Deep Link
+    # Generate Deep Link
     bot_username = context.bot.username
-    deep_link = f"https://t.me/{bot_username}?start={post_id}"
+    from utils.helpers import encode_payload
+    encoded_id = encode_payload(post_id)
+    deep_link = f"https://t.me/{bot_username}?start={encoded_id}"
     context.user_data['mc_deep_link'] = deep_link
     
     await update.message.reply_text(
         f"✅ Validated Post #{post_id}\n\n"
         f"🔗 **Deep Link**:\n`{deep_link}`\n\n"
         "Please send the **Shortened Link** (or any link) you want to use.\n"
-        "Send 'skip' to use the raw deep link.",
+        "Click 'Skip' to use the raw deep link.",
+        reply_markup=ReplyKeyboardMarkup([["⏭️ Skip"], ["❌ Cancel", "🏠 Dashboard"]], resize_keyboard=True),
         parse_mode=ParseMode.MARKDOWN
     )
     return MC_INPUT_LINK
@@ -1009,7 +1013,7 @@ async def mc_input_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if text == "❌ Cancel": return await cancel(update, context)
     
-    if text.lower() == 'skip':
+    if text.lower() == 'skip' or text == "⏭️ Skip":
         short_link = context.user_data['mc_deep_link']
     else:
 
