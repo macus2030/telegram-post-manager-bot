@@ -1,13 +1,14 @@
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, MessageOriginChannel
+from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 from storage import get_message_template, update_message_template, get_help_link, update_help_link, get_main_template, update_main_template
 from utils.helpers import check_admin
 from config import HOW_TO_OPEN_LINK
 from handlers.admin import MENU_REGEX, global_fallback, cancel
+import logging
 
 # States
-SELECT_SETTING, EDIT_MSG_TEMPLATE, EDIT_HELP_LINK, EDIT_MAIN_TEMPLATE = range(4)
+SELECT_SETTING, EDIT_MSG_TEMPLATE, EDIT_HELP_LINK, EDIT_MAIN_TEMPLATE, MANAGE_FORCE_SUB, ADD_FS_CHANNEL = range(6)
 
 async def settings_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entry point for Settings."""
@@ -18,15 +19,13 @@ async def settings_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "⚙️ *Settings Menu*\n\n"
-        "Select what you want to configure:\n"
-        "• **Message Template**: The format of the message sent to users.\n"
-        "• **Main Channel Template**: The format for channel posts.\n"
-        "• **Help Link**: The 'How to Open' link."
+        "Select what you want to configure:"
     )
     
     kb = [
         ["📝 Edit Message Template", "📢 Edit Main Channel Template"],
-        ["🔗 Edit Help Link", "🔙 Back to Dashboard"]
+        ["🔗 Edit Help Link", "🔐 Manage Force Subscribe"],
+        ["🔙 Back to Dashboard"]
     ]
     
     await update.message.reply_text(
@@ -50,13 +49,6 @@ async def handle_setting_selection(update: Update, context: ContextTypes.DEFAULT
             "📝 *Edit Message Template*\n\n"
             "Current Template:\n"
             f"```\n{current_template}\n```\n\n"
-            "**Available Variables**:\n"
-            "`{post_id}` - Post ID\n"
-            "`{caption}` - The caption text\n"
-            "`{category}` - Category Name\n"
-            "`{time}` - Auto-delete time (mins)\n"
-            "`{link}` - Download/Watch Link\n"
-            "`{how_to_open_link}` - Help Link\n\n"
             "Send the new template structure now:",
             reply_markup=ReplyKeyboardMarkup([["❌ Cancel", "🏠 Dashboard"]], resize_keyboard=True),
             parse_mode="Markdown"
@@ -80,19 +72,152 @@ async def handle_setting_selection(update: Update, context: ContextTypes.DEFAULT
             "📢 *Edit Main Channel Template*\n\n"
             "Current Template:\n"
             f"```\n{current}\n```\n\n"
-            "**Available Variables**:\n"
-            "`{news}` - News/Content Text\n"
-            "`{post_id}` - Post ID\n"
-            "`{short_link}` - The link provided\n"
-            "`{how_to_open_link}` - Help Link\n\n"
             "Send the new template structure now:",
             reply_markup=ReplyKeyboardMarkup([["❌ Cancel", "🏠 Dashboard"]], resize_keyboard=True),
             parse_mode="Markdown"
         )
         return EDIT_MAIN_TEMPLATE
 
+    if text == "🔐 Manage Force Subscribe":
+        return await manage_force_sub(update, context)
+
     await update.message.reply_text("Invalid selection.")
     return SELECT_SETTING
+
+async def manage_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from storage import get_force_subs
+    # We use InlineButtons for removing, Reply for Adding/Back
+    
+    channels = get_force_subs()
+    
+    text = "🔐 *Force Subscribe Channels*\n\nUsers MUST join these channels to use the bot.\n\n"
+    if not channels:
+        text += "No channels configured."
+    
+    kb = []
+    for ch in channels:
+        text += f"• {ch['title']} (ID: `{ch['id']}`)\n"
+        kb.append([InlineKeyboardButton(f"🗑 Remove {ch['title']}", callback_data=f"fs_rem_{ch['id']}")])
+        
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(kb) if kb else None,
+        parse_mode="Markdown"
+    )
+    
+    await update.message.reply_text(
+        "Select an action:",
+        reply_markup=ReplyKeyboardMarkup([["➕ Add Channel"], ["🔙 Back"]], resize_keyboard=True)
+    )
+    return MANAGE_FORCE_SUB
+
+async def handle_fs_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    
+    if text == "🔙 Back":
+        return await show_settings_menu(update, context)
+        
+    if text == "➕ Add Channel":
+        await update.message.reply_text(
+            "➕ *Add Force Subscribe Channel*\n\n"
+            "Please forward a message from the channel or send the Channel ID (e.g. -100xxx).\n"
+            "**Note**: I must be an Admin in that channel!",
+            reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True),
+            parse_mode="Markdown"
+        )
+        return ADD_FS_CHANNEL
+        
+    return MANAGE_FORCE_SUB
+
+async def add_fs_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logging.info(f"Entered add_fs_channel with: {update.message.text}")
+    try:
+        msg = update.message
+        if msg.text == "❌ Cancel":
+             return await manage_force_sub(update, context)
+             
+        chat_id = None
+        title = "Unknown Channel"
+        invite_link = None
+        
+        # PTB v20+ Forward Handling
+        if msg.forward_origin:
+            if isinstance(msg.forward_origin, MessageOriginChannel):
+                chat_id = msg.forward_origin.chat.id
+                title = msg.forward_origin.chat.title
+                
+        # Legacy check just in case (or if user is using older version? requirements says >=20)
+        elif hasattr(msg, 'forward_from_chat') and msg.forward_from_chat:
+            chat_id = msg.forward_from_chat.id
+            title = msg.forward_from_chat.title
+            
+        elif msg.text: # Logic if NOT forwarded or forward extraction failed
+            text = msg.text.strip()
+            if text.startswith("-100") or text.lstrip("-").isdigit():
+                 chat_id = int(text)
+            else:
+                 chat_id = text
+                 
+        if not chat_id:
+             # If we have text but it wasn't an ID, and it wasn't a channel forward,
+             # it might be a username or invalid text.
+             if msg.text:
+                 chat_id = msg.text
+             else:
+                await update.message.reply_text("❌ Invalid input. Forward a message from a CHANNEL or send the ID.")
+                return ADD_FS_CHANNEL
+            
+        status_msg = await update.message.reply_text("⏳ Verifying channel...")
+        
+        # Verify Bot Admin
+        chat = await context.bot.get_chat(chat_id)
+        
+        # If we didn't get title from forward, get it from chat object
+        if title == "Unknown Channel":
+            title = chat.title
+            
+        member = await context.bot.get_chat_member(chat_id, context.bot.id)
+        if member.status != "administrator":
+            await update.message.reply_text(f"❌ I am not an admin in {title}. Please promote me first.")
+            return ADD_FS_CHANNEL
+            
+        # Get Invite Link
+        invite_link = chat.invite_link
+        if not invite_link:
+            invite_link = await context.bot.export_chat_invite_link(chat_id)
+            
+        from storage import add_force_sub
+        add_force_sub(chat_id, invite_link, title)
+        
+        await update.message.reply_text(f"✅ Added **{title}** to Force Subscribe list!", parse_mode="Markdown")
+        return await manage_force_sub(update, context)
+        
+    except Exception as e:
+        logging.error(f"Error in add_fs_channel: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Error: {e}")
+        return ADD_FS_CHANNEL
+
+async def remove_fs_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+    channel_id = data.split("_")[2]
+    
+    from storage import remove_force_sub
+    remove_force_sub(channel_id)
+    
+    await query.answer("Channel removed!")
+    
+    # Refresh list
+    await query.message.delete()
+    return await manage_force_sub(update, context)
+
+async def guide_fs_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text and (text.startswith("-100") or text.lstrip("-").isdigit()):
+        await update.message.reply_text("⚠ Please click the **➕ Add Channel** button below first, then send the ID.")
+    else:
+        await update.message.reply_text("⚠ Please select an action from the menu below.")
+    return MANAGE_FORCE_SUB
 
 async def save_msg_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -138,11 +263,20 @@ settings_conv = ConversationHandler(
             MessageHandler(filters.Regex("^📝 Edit Message Template$"), handle_setting_selection),
             MessageHandler(filters.Regex("^🔗 Edit Help Link$"), handle_setting_selection),
             MessageHandler(filters.Regex("^📢 Edit Main Channel Template$"), handle_setting_selection),
+            MessageHandler(filters.Regex("^🔐 Manage Force Subscribe$"), handle_setting_selection),
             MessageHandler(filters.Regex("^🔙 Back to Dashboard$"), handle_setting_selection)
         ],
         EDIT_MSG_TEMPLATE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_msg_template)],
         EDIT_HELP_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_help_link)],
-        EDIT_MAIN_TEMPLATE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_main_template)]
+        EDIT_MAIN_TEMPLATE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_main_template)],
+        
+        MANAGE_FORCE_SUB: [
+            MessageHandler(filters.Regex("^➕ Add Channel$"), handle_fs_action),
+            MessageHandler(filters.Regex("^🔙 Back$"), handle_fs_action),
+            CallbackQueryHandler(remove_fs_callback, pattern="^fs_rem_"),
+            MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), guide_fs_action)
+        ],
+        ADD_FS_CHANNEL: [MessageHandler((filters.TEXT | filters.FORWARDED) & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), add_fs_channel)]
     },
     fallbacks=[
         MessageHandler(filters.Regex(MENU_REGEX), global_fallback),

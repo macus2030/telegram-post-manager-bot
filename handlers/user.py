@@ -1,21 +1,31 @@
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 from telegram.constants import ParseMode
-from storage import get_post, update_post
+from storage import get_post, update_post, is_banned, add_user
 from config import AUTO_DELETE_SECONDS
-from utils.helpers import send_temp_message, check_admin, check_membership
+from utils.helpers import send_temp_message, check_admin, check_membership, get_post_timer
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from utils.helpers import send_temp_message, check_admin
 import asyncio
 import traceback
 
 async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command. Check for deep link parameters."""
+    user = update.effective_user
+    
+    # 1. User Management (Feature)
+    # Track user
+    add_user(user.id, user.username)
+    
+    # Check Ban
+    if is_banned(user.id):
+        # Optional: Send ban message?
+        return # Ignore banned users
+    
     args = context.args
     
     if not args:
         # Check if Admin
-        if check_admin(update.effective_user.id):
+        if check_admin(user.id):
              from handlers.admin import admin_dashboard
              await admin_dashboard(update, context)
              return
@@ -24,35 +34,32 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("👋 Welcome! Use a valid link to access content.")
         return
 
-    post_id = args[0]
+    raw_arg = args[0]
+    from utils.helpers import decode_payload
+    decoded_id = decode_payload(raw_arg)
     
-    # Check Force Subscribe
-    is_member = await check_membership(update.effective_user.id, context)
-    if not is_member:
-        from config import MAIN_CHANNEL_ID
-        # Get channel link? 
-        # Typically we need a link. Since we only have ID, we need to construct or cache invite link.
-        # But for public channel -100..., we can't easily guess link unless configured.
-        # Let's assume user configured a link or we can try to export.
-        # For simplicity, let's ask bot owner to put channel link in config or we try to get it.
-        try:
-             chat = await context.bot.get_chat(MAIN_CHANNEL_ID)
-             chan_link = chat.invite_link or chat.username
-             if not chan_link and chat.username:
-                 chan_link = f"https://t.me/{chat.username}"
-        except:
-             chan_link = "https://t.me/"
-             
-        # "Force Subscribe" UI
-        kb = [
-            [InlineKeyboardButton("📢 Join Channel", url=chan_link or "https://t.me/")],
-            [InlineKeyboardButton("🔄 Try Again", callback_data=f"check_sub_{post_id}")]
-        ]
+    if decoded_id is None:
+        await update.message.reply_text("❌ Invalid Link.")
+        return
+        
+    post_id = str(decoded_id)
+    
+    # Check Force Subscribe (Feature)
+    missing_channels = await check_membership(user.id, context)
+    
+    if missing_channels:
+        # Build UI
+        kb = []
+        for ch in missing_channels:
+            kb.append([InlineKeyboardButton(f"📢 Join {ch['title']}", url=ch['link'])])
+            
+        # Use raw_arg (encoded) in callback to keep it hidden
+        kb.append([InlineKeyboardButton("🔄 Try Again", callback_data=f"check_sub_{raw_arg}")])
         
         await update.message.reply_text(
             "⚠️ **Access Denied**\n\n"
-            "You must join our main channel to access this content.\n"
-            "Please join and click 'Try Again'.",
+            "You must join our channels to access this content.\n"
+            "Please join below and click 'Try Again'.",
             reply_markup=InlineKeyboardMarkup(kb),
             parse_mode=ParseMode.MARKDOWN
         )
@@ -77,7 +84,6 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # 3. Prepare Template Variables
     from storage import get_message_template, get_help_link
-    from config import AUTO_DELETE_SECONDS
     import re
 
     template = get_message_template()
@@ -86,29 +92,24 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check if link is missing or empty
     if not post_link: 
         post_link = ""
-        # Magic: If link is empty, try to remove the specific header line directly from the template
-        # ensuring we don't leave a dangling header.
-        # This matches lines containing "Download/Watch Link" or "Link👇" case insensitive
         template = re.sub(r"(?i)^.*(Download/Watch Link|Link👇).*$\n?", "", template, flags=re.MULTILINE)
+
+    # Determine Timer (Feature)
+    timer_seconds = get_post_timer(post)
 
     variables = {
         "post_id": post_id,
         "caption": post.get("caption", ""),
         "category": post.get("category", "Uncategorized"),
-        "time": int(AUTO_DELETE_SECONDS/60),
+        "time": int(timer_seconds/60),
+        "time_sec": timer_seconds,
         "link": post_link,
         "how_to_open_link": get_help_link()
-
-
     }
     
-    # Safe format (handles missing keys in template gracefully if we used strict formatting, 
-    # but here we use standard .format(). If user puts invalid key, it might crash. 
-    # Let's wrap in safe format or try/except).
     try:
         final_caption = template.format(**variables)
     except KeyError as e:
-        # Fallback if user messed up template variables
         final_caption = f"⚠ Template Error: Missing {e}\n\n" + post.get("caption", "")
     except Exception as e:
          final_caption = post.get("caption", "")
@@ -122,14 +123,6 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
              file_id = post.get("file_id")
              file_type = post.get("file_type", "document")
              
-             # Telegram caption limit is 1024 chars. If template is long, we might need to send text separately?
-             # For now, assume it fits or text post fallback.
-             if len(final_caption) > 1024:
-                 # Send file then text? Or just shorten?
-                 # Let's send file with short caption and then full info? No, user wants one message.
-                 # Just use reply_message if file type supports it.
-                 pass
-
              if file_type == "document":
                  sent_msg = await update.message.reply_document(document=file_id, caption=final_caption, parse_mode=ParseMode.HTML)
              elif file_type == "video":
@@ -140,13 +133,11 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
                  sent_msg = await update.message.reply_audio(audio=file_id, caption=final_caption, parse_mode=ParseMode.HTML)
                  
         else: # Link type
-            # HTML escape logic not strictly enforced here but recommended if caption has weird chars.
-            # Assuming user inputs safe text or we could use html.escape(final_caption)
             sent_msg = await update.message.reply_text(final_caption, parse_mode=ParseMode.HTML)
             
         # 5. Schedule Auto-Delete
         if sent_msg:
-             context.job_queue.run_once(auto_delete_job, AUTO_DELETE_SECONDS, chat_id=update.effective_chat.id, data=sent_msg.message_id)
+             context.job_queue.run_once(auto_delete_job, timer_seconds, chat_id=update.effective_chat.id, data=sent_msg.message_id)
             
     except Exception as e:
         traceback.print_exc()
@@ -159,7 +150,7 @@ async def auto_delete_job(context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.delete_message(chat_id=job.chat_id, message_id=job.data)
     except Exception as e:
-        print(f"Auto-delete failed: {e}")
+        pass
 
 async def handle_not_joined(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -168,28 +159,16 @@ async def handle_not_joined(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     post_id = data.replace("check_sub_", "")
     
-    # Re-check
-    is_member = await check_membership(update.effective_user.id, context)
+    # Re-check (returns list)
+    missing = await check_membership(update.effective_user.id, context)
     
-    if is_member:
+    if not missing:
+        # Success!
         await query.delete_message()
-        # Mock args and call start_user logic? 
-        # Or just extract logic to `serve_post(update, context, post_id)`
-        # Calling start_user from callback requires mocking args.
-        context.args = [post_id]
-        # We need a message to reply to. Callback has message.
-        # start_user expects update.message to be present for reply_text (line 23, 31..).
-        # We should patch update.message = query.message
-        # But safer to refactor logic.
-        # Let's just recursively call start_user ensuring context.args is set and we handle reply correctly.
-        # Actually start_user calls update.message.reply_...
-        # So we can set update.message = query.message
-        
-        # Create a fake update or modify?
-        # Simpler: just call the logic directly provided we refactor?
-        # No time to refactor deep.
-        # Let's shim it.
+        # Patch message object to allow reply
         update.message = query.message
+        context.args = [post_id]
         await start_user(update, context)
     else:
-        await query.answer("❌ You haven't joined yet!", show_alert=True)
+        await query.answer("❌ You haven't joined all channels!", show_alert=True)
+        # We could update the buttons if the list changed (e.g. joined 1 of 2), but static list is fine for now.

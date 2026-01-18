@@ -116,6 +116,8 @@ def main():
 
     from handlers.categories import category_conv
     from handlers.settings import settings_conv, settings_dashboard
+    from handlers.users_admin import users_dashboard, user_search_conv, handle_users_callback
+    from handlers.broadcast import broadcast_dashboard, broadcast_conv, handle_bc_callback
     
     # Conversations first
     application.add_handler(settings_conv)
@@ -126,11 +128,15 @@ def main():
     application.add_handler(search_conv)
     application.add_handler(edit_post_conv)
     application.add_handler(sched_edit_conv)
+    application.add_handler(broadcast_conv)
+    application.add_handler(user_search_conv)
 
     # Callbacks
     application.add_handler(CallbackQueryHandler(handle_not_joined, pattern="^check_sub_"))
     application.add_handler(CallbackQueryHandler(handle_schedule_callback, pattern="^sched_"))
-    application.add_handler(CallbackQueryHandler(handle_manager_callback, pattern="^(?!cat_|add_new_category|back_to_dashboard|check_sub_|sched_).*")) 
+    application.add_handler(CallbackQueryHandler(handle_users_callback, pattern="^(users_|search_user|ban_|unban_|back_users)"))
+    application.add_handler(CallbackQueryHandler(handle_bc_callback, pattern="^bc_"))
+    application.add_handler(CallbackQueryHandler(handle_manager_callback, pattern="^(?!cat_|add_new_category|back_to_dashboard|check_sub_|sched_|users_|search_user|ban_|unban_|bc_).*")) 
     # Old category callbacks are no longer needed as we use ReplyKeyboard, but keeping pattern exclusion in manager is fine.
     
     # Commands
@@ -147,6 +153,8 @@ def main():
     application.add_handler(MessageHandler(filters.Regex("^💾 Backup & Export$"), export_data))
     application.add_handler(MessageHandler(filters.Regex("^🧹 Clear Chat$"), clear_chat_history))
     application.add_handler(MessageHandler(filters.Regex("^⏳ Scheduled Posts$"), scheduled_dashboard))
+    application.add_handler(MessageHandler(filters.Regex("^👥 Users$"), users_dashboard))
+    application.add_handler(MessageHandler(filters.Regex("^📢 Broadcast$"), broadcast_dashboard))
     application.add_handler(MessageHandler(filters.Regex("^🔙 Back$"), admin_dashboard))
     
     # Catch-all for dashboard

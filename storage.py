@@ -610,12 +610,6 @@ def search_posts(query: str, limit: int = 10) -> List[Tuple[int, Dict[str, Any]]
     return results
 
 def get_pending_scheduled_posts() -> List[Tuple[int, Dict[str, Any]]]:
-    # Fetch posts where is_scheduled is True or status is 'pending'
-    # Since specific columns like 'status' might not be in the SQL schema effectively for filter if not migrated,
-    # we use the JSON search or just rely on 'status' column if we keep it updated.
-    # We moved to JSON blob primarily.
-    # BEST APPROACH: Search JSON for "is_scheduled": true
-    # Note: SQLite JSON queries can be slow without index, but for scheduling it's fine.
     
     with lock:
         conn = get_connection()
@@ -648,3 +642,188 @@ def get_all_posts() -> Dict[str, Any]:
 
 # Initialize on module load
 init_db()
+
+# --- SMART FEATURES SUPPORT ---
+
+def init_db_extras():
+    """Called to ensure new tables exist"""
+    conn = get_connection()
+    c = conn.cursor()
+    
+    # Users Table
+    c.execute("""CREATE TABLE IF NOT EXISTS users (
+        user_id INTEGER PRIMARY KEY,
+        username TEXT,
+        joined_at INTEGER,
+        is_banned BOOLEAN DEFAULT 0
+    )""")
+    
+    # Force Subscribe Channels
+    c.execute("""CREATE TABLE IF NOT EXISTS force_sub (
+        channel_id TEXT PRIMARY KEY,
+        invite_link TEXT,
+        title TEXT
+    )""")
+    
+    conn.commit()
+    conn.close()
+
+# Run extras init immediately
+init_db_extras()
+
+def add_user(user_id: int, username: str = None):
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        try:
+            c.execute("INSERT OR IGNORE INTO users (user_id, username, joined_at) VALUES (?, ?, ?)", 
+                      (user_id, username, int(time.time())))
+            # Update username if changed?
+            if username:
+                c.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, user_id))
+            conn.commit()
+        except Exception as e:
+            print(f"Error adding user: {e}")
+        conn.close()
+
+def get_all_users_count() -> int:
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM users")
+        res = c.fetchone()[0]
+        conn.close()
+    return res
+
+def get_all_users_iter():
+    """Generator to yield users for broadcasting without loading all in RAM"""
+    # Use pagination
+    limit = 100
+    offset = 0
+    while True:
+        with lock:
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute("SELECT user_id FROM users LIMIT ? OFFSET ?", (limit, offset))
+            rows = c.fetchall()
+            conn.close()
+        
+        if not rows:
+            break
+            
+        for r in rows:
+            yield r[0]
+        
+        offset += limit
+
+# -- Ban System --
+def ban_user(user_id: int):
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        # Insert if not exists, then update
+        c.execute("INSERT OR IGNORE INTO users (user_id, joined_at) VALUES (?, ?)", (user_id, int(time.time())))
+        c.execute("UPDATE users SET is_banned = 1 WHERE user_id = ?", (user_id,))
+        conn.commit()
+        conn.close()
+
+def unban_user(user_id: int):
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("UPDATE users SET is_banned = 0 WHERE user_id = ?", (user_id,))
+        conn.commit()
+        conn.close()
+
+def is_banned(user_id: int) -> bool:
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT is_banned FROM users WHERE user_id = ?", (user_id,))
+        row = c.fetchone()
+        conn.close()
+    return True if row and row[0] else False
+
+# -- Force Sub --
+def add_force_sub(channel_id: str, invite_link: str, title: str):
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO force_sub (channel_id, invite_link, title) VALUES (?, ?, ?)", 
+                  (str(channel_id), invite_link, title))
+        conn.commit()
+        conn.close()
+
+def remove_force_sub(channel_id: str):
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("DELETE FROM force_sub WHERE channel_id = ?", (str(channel_id),))
+        conn.commit()
+        conn.close()
+
+def get_force_subs() -> List[Dict[str, str]]:
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT * FROM force_sub")
+        rows = c.fetchall()
+        conn.close()
+    
+    return [{"id": r["channel_id"], "link": r["invite_link"], "title": r["title"]} for r in rows]
+
+# -- Advanced Search --
+def search_posts_advanced(query: str, type_filter: str = None, status_filter: str = None, limit: int = 20) -> List[Tuple[int, Dict[str, Any]]]:
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        
+        sql = "SELECT id, data FROM posts WHERE 1=1"
+        params = []
+        
+        if query:
+            if query.isdigit():
+                sql += " AND id = ?"
+                params.append(int(query))
+            else:
+                sql += " AND data LIKE ?"
+                params.append(f"%{query}%")
+                
+        if type_filter and type_filter != "All":
+            sql += " AND type = ?"
+            # JSON extraction via LIKE is hard for fields.
+            # But wait, we have columns 'type', 'status', 'category'!
+            # We created them in init_db line 60.
+            params.append(type_filter.lower())
+            
+        if status_filter and status_filter != "All":
+             st = status_filter.lower()
+             if st == "active":
+                 sql += " AND status = 'active'"
+             elif st == "disabled":
+                 sql += " AND (status = 'disabled' OR status = 'deleted')"
+            
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        
+        c.execute(sql, tuple(params))
+        rows = c.fetchall()
+        conn.close()
+        
+    results = []
+    for r in rows:
+        results.append((r["id"], json.loads(r["data"])))
+    return results
+def delete_all_posts():
+    """Deletes ALL posts from the database."""
+    with lock:
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM posts")
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"Error deleting all posts: {e}")
+            return False

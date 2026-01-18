@@ -10,7 +10,7 @@ import logging
 import datetime
 
 # States
-SELECT_TYPE, UPLOAD_FILE, INPUT_LINK, EDIT_CAPTION, INPUT_PASSWORD, SELECT_CATEGORY, CONFIRM = range(7)
+SELECT_TYPE, UPLOAD_FILE, INPUT_LINK, EDIT_CAPTION, INPUT_PASSWORD, SELECT_CATEGORY, CONFIRM, INPUT_TIMER = range(8)
 # Main Channel Flow States
 MC_INPUT_ID, MC_INPUT_LINK, MC_INPUT_NEWS, MC_CONFIRM, MC_SCHEDULE, MC_SCHEDULE_CONFIRM = range(6, 12)
 
@@ -19,6 +19,7 @@ DASHBOARD_KB = [
     ["➕ Create Post", "📦 Bulk Create"],
     ["📢 Main Channel Post", "⏳ Scheduled Posts"],
     ["📝 Post Manager", "📂 Categories"],
+    ["👥 Users", "📢 Broadcast"],
     ["⚙️ Settings", "📊 Statistics"],
     ["🔍 Search", "💾 Backup & Export"],
     ["🧹 Clear Chat"]
@@ -111,6 +112,16 @@ async def global_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await export_data(update, context)
         return ConversationHandler.END
 
+    elif text == "👥 Users":
+        from handlers.users_admin import users_dashboard
+        await users_dashboard(update, context)
+        return ConversationHandler.END
+        
+    elif text == "📢 Broadcast":
+        from handlers.broadcast import broadcast_dashboard
+        await broadcast_dashboard(update, context)
+        return ConversationHandler.END
+
     elif text == "🧹 Clear Chat":
         await clear_chat_history(update, context)
         return ConversationHandler.END
@@ -121,7 +132,8 @@ async def global_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await cancel(update, context) # Default
 
 # Regex for all menu buttons
-MENU_REGEX = "^(🏠 Dashboard|📝 Post Manager|📂 Categories|⚙️ Settings|📊 Statistics|💾 Backup & Export|🧹 Clear Chat|❌ Cancel|➕ Create Post|📦 Bulk Create|📢 Main Channel Post|🔍 Search|⏳ Scheduled Posts)$"
+# Regex for all menu buttons
+MENU_REGEX = "^(🏠 Dashboard|📝 Post Manager|📂 Categories|⚙️ Settings|📊 Statistics|💾 Backup & Export|🧹 Clear Chat|❌ Cancel|➕ Create Post|📦 Bulk Create|📢 Main Channel Post|🔍 Search|⏳ Scheduled Posts|👥 Users|📢 Broadcast)$"
 
 async def scheduled_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from storage import get_pending_scheduled_posts
@@ -622,17 +634,22 @@ async def show_category_selection_ui(update: Update, context: ContextTypes.DEFAU
 async def show_final_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = context.user_data
     
+    # Timer Display
+    timer_val = data.get('auto_delete_timer')
+    timer_str = f"{timer_val} mins" if timer_val else f"Default ({int(AUTO_DELETE_SECONDS/60)} mins)"
+    
     preview_text = (
         "📋 *Confirm Post Creation*\n\n"
         f"**Type**: {data.get('type')}\n"
         f"**Category**: {data.get('category')}\n"
         f"**File**: {data.get('file_name', 'N/A')}\n"
-        f"**Link**: {data.get('link', 'N/A')}\n\n"
+        f"**Link**: {data.get('link', 'N/A')}\n"
+        f"**Timer**: {timer_str}\n\n"
         "**Caption/Content**:\n"
         f"_{data.get('caption')}_"
     )
     
-    kb = [["✅ Create Post", "Draft Mode"], ["✏️ Edit Again", "❌ Cancel"]]
+    kb = [["✅ Create Post", "Draft Mode"], ["⏱️ Set Timer", "✏️ Edit Again"], ["❌ Cancel"]]
     await update.message.reply_text(
         preview_text,
         reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
@@ -648,6 +665,16 @@ async def final_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     if choice == "✏️ Edit Again":
         return await ask_edit_caption(update, context)
+
+    if choice == "⏱️ Set Timer":
+        await update.message.reply_text(
+            "⏱️ *Set Custom Auto-Delete Timer*\n\n"
+            "Enter the time in **minutes** (e.g. `10`, `60`).\n"
+            "Enter `0` to reset to Default.",
+            reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return INPUT_TIMER
     
     status = "active"
     if choice == "Draft Mode":
@@ -664,6 +691,7 @@ async def final_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "caption": data['caption'],
         "category": data['category'],
         "status": status,
+        "auto_delete_timer": data.get('auto_delete_timer'), # Feature
         # Default empty fields
         "tags": [],
         "views": 0,
@@ -671,7 +699,9 @@ async def final_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     })
     
     bot_username = context.bot.username
-    deep_link = f"https://t.me/{bot_username}?start={post_id}"
+    from utils.helpers import encode_payload
+    encoded_id = encode_payload(post_id)
+    deep_link = f"https://t.me/{bot_username}?start={encoded_id}"
     
     # Render Preview
     template = get_message_template()
@@ -682,11 +712,15 @@ async def final_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Magic: If link is empty, remove related header line
         template = re.sub(r"(?i)^.*(Download/Watch Link|Link👇).*$\n?", "", template, flags=re.MULTILINE)
     
+    custom_timer_mins = data.get('auto_delete_timer')
+    preview_seconds = int(custom_timer_mins) * 60 if custom_timer_mins else AUTO_DELETE_SECONDS
+
     variables = {
         "post_id": post_id,
         "caption": data['caption'],
         "category": data['category'],
-        "time": int(AUTO_DELETE_SECONDS/60),
+        "time": int(preview_seconds/60),
+        "time_sec": preview_seconds,
         "link": post_link,
         "how_to_open_link": get_help_link()
     }
@@ -757,6 +791,27 @@ async def clear_chat_history(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Also delete the status message itself if possible, but we just re-dashboard
     await admin_dashboard(update, context)
 
+# Helper for Timer
+async def set_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text == "❌ Cancel":
+        return await show_final_confirmation(update, context)
+        
+    if not text.isdigit():
+        await update.message.reply_text("⚠ Please enter a valid number of minutes.")
+        return INPUT_TIMER
+        
+    mins = int(text)
+    if mins == 0:
+        if 'auto_delete_timer' in context.user_data:
+            del context.user_data['auto_delete_timer']
+        await update.message.reply_text("✅ Timer reset to Global Default.")
+    else:
+        context.user_data['auto_delete_timer'] = mins
+        await update.message.reply_text(f"✅ Timer set to **{mins} mins**.")
+        
+    return await show_final_confirmation(update, context)
+
 # Export handler
 create_post_conv = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex("^➕ Create Post$"), start_create_post)],
@@ -767,7 +822,8 @@ create_post_conv = ConversationHandler(
         INPUT_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), handle_password_input)],
         EDIT_CAPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), edit_caption)],
         SELECT_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), select_category)],
-        CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), final_confirm)]
+        CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), final_confirm)],
+        INPUT_TIMER: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), set_timer)]
     },
     fallbacks=[
         MessageHandler(filters.Regex(MENU_REGEX), global_fallback),

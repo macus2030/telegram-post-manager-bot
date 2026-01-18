@@ -54,17 +54,80 @@ def validate_link(text: str) -> str | None:
         
     return text
 
-async def check_membership(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Check if user is member of Main Channel."""
+async def check_membership(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> list:
+    """Check if user is member of Required Channels. Returns list of missing channel info dicts."""
     from config import MAIN_CHANNEL_ID
-    if not MAIN_CHANNEL_ID: return True # No channel set = open access
+    from storage import get_force_subs
     
+    missing = []
+    
+    # 1. Main Channel (Legacy/Env)
+    if MAIN_CHANNEL_ID:
+        try:
+            member = await context.bot.get_chat_member(chat_id=MAIN_CHANNEL_ID, user_id=user_id)
+            if member.status not in ['creator', 'administrator', 'member']:
+                # Get Link
+                try:
+                     chat = await context.bot.get_chat(MAIN_CHANNEL_ID)
+                     link = chat.invite_link or f"https://t.me/{chat.username}" if chat.username else "https://t.me/"
+                     title = chat.title or "Main Channel"
+                except:
+                     link = "https://t.me/"
+                     title = "Main Channel"
+                missing.append({"title": title, "link": link})
+        except Exception as e:
+            print(f"Error checking main channel: {e}")
+            # If error (e.g. bot kicked), we usually fail open or closed. 
+            # Let's fail open (assume joined) to avoid blocking users if bot breaks.
+            pass
+            
+    # 2. Dynamic Channels
+    force_subs = get_force_subs()
+    for ch in force_subs:
+        try:
+            member = await context.bot.get_chat_member(chat_id=ch['id'], user_id=user_id)
+            if member.status not in ['creator', 'administrator', 'member']:
+                missing.append({"title": ch['title'], "link": ch['link']})
+        except telegram.error.BadRequest:
+            # Bot likely not in channel
+            pass
+        except Exception as e:
+            print(f"Error checking fs channel {ch['id']}: {e}")
+            
+    return missing
+
+    return missing
+
+def get_post_timer(post: dict) -> int:
+    """Get auto-delete timer for specific post or default."""
+    from config import AUTO_DELETE_SECONDS
+    # Check if post has override
+    if post.get("auto_delete_timer"):
+         minutes = int(post.get("auto_delete_timer"))
+         return minutes * 60
+         
+    return AUTO_DELETE_SECONDS
+
+# --- Obfuscation ---
+import base64
+OBFUSCATION_KEY = 7439121 
+
+def encode_payload(post_id: int) -> str:
+    """XOR + Base64 Encode post ID."""
     try:
-        member = await context.bot.get_chat_member(chat_id=MAIN_CHANNEL_ID, user_id=user_id)
-        if member.status in ['creator', 'administrator', 'member']:
-            return True
-    except Exception as e:
-        print(f"Error checking membership: {e}")
-        return False
+        val = int(post_id) ^ OBFUSCATION_KEY
+        return base64.urlsafe_b64encode(str(val).encode()).decode().rstrip("=")
+    except:
+        return str(post_id)
+
+def decode_payload(payload: str) -> int | None:
+    """Decode post ID. Returns None if invalid."""
+    try:
+        # Strict Mode: No backward compatibility for plain integers
         
-    return False
+        pad = len(payload) % 4
+        if pad: payload += "=" * (4 - pad)
+        s = base64.urlsafe_b64decode(payload.encode()).decode()
+        return int(s) ^ OBFUSCATION_KEY
+    except:
+        return None

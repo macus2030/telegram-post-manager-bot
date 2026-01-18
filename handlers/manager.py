@@ -58,6 +58,10 @@ async def show_post_list(update: Update, context: ContextTypes.DEFAULT_TYPE, pag
         
     kb.append(filter_row)
     
+    # Delete All Button (Only on main view)
+    if page == 0 and category_filter == "All":
+         kb.append([InlineKeyboardButton("🗑 Delete ALL Posts", callback_data="delall_confirm")])
+
     # Dashboard back
     kb.append([InlineKeyboardButton("🏠 Dashboard", callback_data="dashboard_return")])
     
@@ -99,7 +103,8 @@ async def render_post_detail(update: Update, context: ContextTypes.DEFAULT_TYPE,
         f"**Category**: {post.get('category')}\n"
         f"**Views**: {post.get('views')}\n"
         f"**Link**: {post.get('link', 'N/A')}\n"
-        f"**File**: {post.get('file_name', 'N/A')}\n\n"
+        f"**File**: {post.get('file_name', 'N/A')}\n"
+        f"**Timer**: {post.get('auto_delete_timer', 'Default')} mins\n\n"
         f"**Caption**:\n_{post.get('caption')}_"
     )
     
@@ -134,6 +139,7 @@ async def start_edit_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📝 Edit Caption", callback_data="field_caption")],
         [InlineKeyboardButton("🏷 Edit Category", callback_data="field_category")],
         [InlineKeyboardButton("🔗 Edit Link", callback_data="field_link")],
+        [InlineKeyboardButton("⏱️ Edit Timer", callback_data="field_timer")],
         [InlineKeyboardButton("🔙 Cancel", callback_data="cancel_edit")]
     ]
     
@@ -158,7 +164,8 @@ async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     field_map = {
         "field_caption": "caption",
         "field_category": "category",
-        "field_link": "link"
+        "field_link": "link",
+        "field_timer": "auto_delete_timer"
     }
     
     field = field_map.get(data)
@@ -190,6 +197,8 @@ async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     elif field == "link":
         prompt = "🔗 Send the new *Link* URL:"
+    elif field == "auto_delete_timer":
+        prompt = "⏱️ Send new **Auto-Delete Timer** in minutes (e.g. `10`, `60`).\nSend `0` to use Global Default."
         
     kb = [[InlineKeyboardButton("🔙 Cancel", callback_data="cancel_edit")]]
     
@@ -214,6 +223,12 @@ async def edit_input_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = text.strip()
         if not (text.startswith("http://") or text.startswith("https://")):
             text = f"https://{text}"
+    
+    if field == "auto_delete_timer":
+        if not text.isdigit():
+             await update.message.reply_text("❌ Invalid input. Please enter a number (minutes).")
+             return EDIT_INPUT
+
 
     # Update DB
     update_post(pid, {field: text})
@@ -437,7 +452,7 @@ async def handle_manager_callback(update: Update, context: ContextTypes.DEFAULT_
             if not post:
                 await try_answer("Post not found", alert=True)
                 return
-                
+
             await try_answer("Sent preview below 👇")
             
             caption = f"[PREVIEW] {post.get('caption')}"
@@ -449,10 +464,20 @@ async def handle_manager_callback(update: Update, context: ContextTypes.DEFAULT_
             except Exception as e:
                 await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ Preview failed: {e}")
 
+        elif data.startswith("delall_"):
+             if data == "delall_confirm":
+                 await confirm_delete_all(update, context)
+             elif data == "delall_schedule":
+                 await schedule_delete_all(update, context)
+             elif data.startswith("delall_undo_"):
+                 await undo_delete_all(update, context)
+
         elif data.startswith("copy_"):
             pid = data.split("_")[1]
+            from utils.helpers import encode_payload
+            enc_id = encode_payload(pid)
             bot_username = context.bot.username
-            link = f"https://t.me/{bot_username}?start={pid}"
+            link = f"https://t.me/{bot_username}?start={enc_id}"
             await try_answer(link, alert=True) 
             await context.bot.send_message(chat_id=update.effective_chat.id, text=f"`{link}`", parse_mode=ParseMode.MARKDOWN)
 
@@ -479,3 +504,63 @@ async def cleanup_undo_button(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception:
         pass
 
+async def confirm_delete_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    
+    await query.message.reply_text(
+        "⚠ **WARNING: DATA LOSS** ⚠\n\n"
+        "Are you sure you want to delete **ALL POSTS**?\n"
+        "This action cannot be undone (after the safety timer).",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🧨 Yes, Delete Everything", callback_data="delall_schedule")],
+            [InlineKeyboardButton("🔙 Cancel", callback_data="dashboard")]
+        ]),
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+async def schedule_delete_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    # Schedule Job
+    job_name = f"delall_{query.from_user.id}"
+    context.job_queue.run_once(execute_delete_all_job, 10, name=job_name, chat_id=query.message.chat_id)
+    
+    await query.message.reply_text(
+        "🚨 **DELETION INITIATED** 🚨\n\n"
+        "All posts will be deleted in **10 seconds**.\n"
+        "Click UNDO to cancel!",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("↩ UNDO DELETION", callback_data=f"delall_undo_{job_name}")]
+        ]),
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+async def undo_delete_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data 
+    job_name = data.replace("delall_undo_", "")
+    
+    jobs = context.job_queue.get_jobs_by_name(job_name)
+    if jobs:
+        for job in jobs:
+            job.schedule_removal()
+        await query.answer("Deletion Cancelled!")
+        await query.message.reply_text("✅ **Restored!** No posts were deleted.")
+    else:
+        await query.answer("Too late!", show_alert=True)
+        await query.message.reply_text("❌ **Too late.** The deletion has already executed.")
+        
+    # Return to manager
+    await show_post_list(update, context, 0, "All")
+
+async def execute_delete_all_job(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    from storage import delete_all_posts
+    
+    success = delete_all_posts()
+    
+    if success:
+        await context.bot.send_message(job.chat_id, "🗑 **System Purge Complete**.\nAll posts have been deleted.")
+    else:
+        await context.bot.send_message(job.chat_id, "❌ Error occurred during deletion.")

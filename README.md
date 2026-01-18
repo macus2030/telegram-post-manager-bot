@@ -5,9 +5,14 @@ A robust Telegram bot for managing channels, creating posts with file attachment
 ## Features
 
 *   **Advanced Post Creation**: Upload files (with passwords!) or share deep links.
+*   **Secure Links** 🔒: Post IDs are obfuscated (`start=XyZ...`) to prevent guessing. Strict mode enabled.
+*   **Force Subscribe** 🔐: Require users to join specific channels before accessing content.
+*   **Broadcasting** 📢: Send messages to all users or filter by specific criteria.
+*   **User Management** 👥: View user stats, ban/unban users, and track activity.
 *   **Categories**: Organize posts with multi-select tags (e.g., "Action", "Drama").
-*   **Auto-Delete**: Content sent to users self-destructs after a set time (default: 30 mins) for security.
-*   **Persistence**: Remembers all data and timers even after restarts.
+*   **Auto-Delete** ⏱️: Content self-destructs after a set time (customizable per post).
+*   **Advanced Search** 🔎: Find posts by ID, generic text, or filters.
+*   **Persistence**: Uses SQLite (`bot.db`) for robust data handling.
 *   **Admin Dashboard**: Full management UI within Telegram.
 
 ## Prerequisites
@@ -56,16 +61,23 @@ A robust Telegram bot for managing channels, creating posts with file attachment
     *   Open your bot in Telegram.
     *   Send any message or `/start`.
     *   If you are the `ADMIN_ID`, you will see the **Admin Dashboard**.
+    
+    **New Dashboard Features**:
+    - **📢 Broadcast**: announcement tools.
+    - **👥 Users**: Manage banned/active users.
+    - **⚙️ Settings**: Configure Templates, Help Links, and Force Subscribe channels.
+    - **💾 Backup**: Export your database instantly.
 
 3.  **Create Content**:
     *   Use the **➕ Create Post** menu to upload files or create links.
-    *   Users can then access these posts via the "Deep Link" provided by the bot.
+    *   **Timer**: Set a custom auto-delete timer for each post.
+    *   **Secure Link**: The bot generates a safe, obfuscated link for you to share.
 
 ## Project Structure
 
 *   `bot.py`: Main entry point.
-*   `handlers/`: Contains logic for Admin, User, and Manager workflows.
-*   `storage.py`: Handles data persistence (JSON).
+*   `handlers/`: Contains logic for Admin, User, Manager, Broadcast, and Settings.
+*   `storage.py`: Handles SQLite database operations.
 *   `config.py`: Configuration loader.
 
 
