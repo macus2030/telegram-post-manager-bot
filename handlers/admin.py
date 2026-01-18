@@ -30,7 +30,18 @@ async def admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Select an action below:"
     )
     markup = ReplyKeyboardMarkup(DASHBOARD_KB, resize_keyboard=True)
-    await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.MARKDOWN)
+    
+    if update.callback_query:
+        # If triggered by a button (e.g., from Post Manager), we need to send a fresh message
+        await update.callback_query.answer()
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=text,
+            reply_markup=markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.MARKDOWN)
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancels and ends the conversation."""
@@ -910,53 +921,66 @@ async def mc_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Invalid format. Use Minutes (int) or HH:MM.")
         return MC_SCHEDULE
 
-    if delay_seconds <= 0:
-         await update.message.reply_text("⚠ Invalid time. Must be in the future.")
-         return MC_SCHEDULE
+    try:
+        if delay_seconds <= 0:
+             await update.message.reply_text("⚠ Invalid time. Must be in the future.")
+             return MC_SCHEDULE
 
-    # Schedule Job
-    post_id = context.user_data['mc_post_id']
-    preview_text = context.user_data['mc_preview_text']
-    
-    # Calculate Future Time
-    schedule_time = datetime.datetime.now() + datetime.timedelta(seconds=delay_seconds)
-    
-    # Store temporary schedule data
-    context.user_data['temp_schedule_time'] = schedule_time.timestamp()
-    context.user_data['temp_delay_seconds'] = delay_seconds
-    
-    # Validation: Conflict Detection (Same as before)
-    pending = get_pending_scheduled_posts()
-    warnings = ""
-    for pid, data in pending:
-        if pid == post_id: continue 
-        existing_time_ts = data.get("scheduled_for")
-        if existing_time_ts:
-            existing_time = datetime.datetime.fromtimestamp(existing_time_ts)
-            diff = abs((schedule_time - existing_time).total_seconds())
-            if diff < 300: 
-                warnings += f"\n⚠ **Conflict**: Post #{pid} is within 5 mis of this."
+        # Schedule Job
+        post_id = context.user_data['mc_post_id']
+        preview_text = context.user_data['mc_preview_text']
+        
+        # Calculate Future Time
+        schedule_time = datetime.datetime.now() + datetime.timedelta(seconds=delay_seconds)
+        
+        # Store temporary schedule data
+        context.user_data['temp_schedule_time'] = schedule_time.timestamp()
+        context.user_data['temp_delay_seconds'] = delay_seconds
+        
+        # Validation: Conflict Detection (Same as before)
+        try:
+            pending = get_pending_scheduled_posts()
+            warnings = ""
+            for pid, data in pending:
+                if pid == post_id: continue 
+                existing_time_ts = data.get("scheduled_for")
+                if existing_time_ts:
+                    existing_time = datetime.datetime.fromtimestamp(existing_time_ts)
+                    diff = abs((schedule_time - existing_time).total_seconds())
+                    if diff < 300: 
+                        warnings += f"\n⚠ **Conflict**: Post #{pid} is within 5 mis of this."
+        except Exception as e:
+            print(f"Warning: Conflict check failed: {e}")
+            warnings = ""
 
-    # IST Conversion
-    ist_time = schedule_time + datetime.timedelta(hours=5, minutes=30)
-    ist_str = ist_time.strftime('%Y-%m-%d %I:%M %p') # 06:19 PM format
-    
-    channel_id = MAIN_CHANNEL_ID
-    file_info = f"Post #{post_id}" # We could fetch file name if we want rich preview
-    
-    msg_text = (
-        "⏳ **Confirm Schedule**\n\n"
-        f"**Post**: {file_info}\n"
-        f"**Channel**: `{channel_id}`\n"
-        f"**Time (IST)**: `{ist_str}` (India Standard Time)\n"
-        f"**Time (UTC)**: `{schedule_time.strftime('%H:%M')}`\n"
-        f"{warnings}\n"
-        "Please confirm execution."
-    )
-    
-    kb = [["✅ Confirm Schedule"], ["✏ Edit Time", "❌ Cancel"]]
-    await update.message.reply_text(msg_text, reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True), parse_mode=ParseMode.MARKDOWN)
-    return MC_SCHEDULE_CONFIRM
+        # IST Conversion
+        ist_time = schedule_time + datetime.timedelta(hours=5, minutes=30)
+        ist_str = ist_time.strftime('%Y-%m-%d %I:%M %p') # 06:19 PM format
+        
+        channel_id = MAIN_CHANNEL_ID
+        file_info = f"Post #{post_id}" # We could fetch file name if we want rich preview
+        
+        msg_text = (
+            "⏳ **Confirm Schedule**\n\n"
+            f"**Post**: {file_info}\n"
+            f"**Channel**: `{channel_id}`\n"
+            f"**Time (IST)**: `{ist_str}` (India Standard Time)\n"
+            f"**Time (UTC)**: `{schedule_time.strftime('%H:%M')}`\n"
+            f"{warnings}\n"
+            "Please confirm execution."
+        )
+        
+        kb = [["✅ Confirm Schedule"], ["✏ Edit Time", "❌ Cancel"]]
+        await update.message.reply_text(msg_text, reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True), parse_mode=ParseMode.MARKDOWN)
+        return MC_SCHEDULE_CONFIRM
+        
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        # Truncate if too long
+        if len(tb) > 2000: tb = tb[:2000] + "..."
+        await update.message.reply_text(f"❌ Error in schedule input: {e}\n\nTraceback:\n`{tb}`", parse_mode=ParseMode.MARKDOWN)
+        return MC_SCHEDULE
 
 async def mc_schedule_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
