@@ -213,11 +213,27 @@ async def handle_schedule_callback(update: Update, context: ContextTypes.DEFAULT
         
         kb = [
             [InlineKeyboardButton("🚀 Post Now", callback_data=f"sched_now_{pid}")],
+            [InlineKeyboardButton("👁 Preview Message", callback_data=f"sched_preview_{pid}")],
             [InlineKeyboardButton("✏ Edit Time", callback_data=f"sched_edit_{pid}")],
             [InlineKeyboardButton("🗑 Delete Schedule", callback_data=f"sched_del_{pid}")],
             [InlineKeyboardButton("🔙 Back", callback_data="sched_list")]
         ]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
+
+    elif data.startswith("sched_preview_"):
+        pid = data.split("_")[-1]
+        post = get_post(pid)
+        if not post:
+             await query.answer("Post not found", show_alert=True)
+             return
+             
+        preview_text = post.get("channel_preview_text", "No Content")
+        try:
+             # Send as new message so we don't destroy the menu
+             await query.message.reply_text(f"⬇️ **Preview for #{pid}**:\n\n{preview_text}", parse_mode=ParseMode.HTML)
+             await query.answer()
+        except Exception as e:
+             await query.answer(f"Preview Failed: {e}", show_alert=True)
         
     elif data.startswith("sched_del_"):
         pid = data.split("_")[-1]
@@ -882,16 +898,24 @@ async def clear_chat_history(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Send temporary status
     status_msg = await update.message.reply_text("🧹 Clearing chat...")
     
-    # Loop backwards
-    n = 0
-    for mid in range(message_id, message_id - 50, -1):
+    # Loop backwards to delete previous messages
+    # We try to delete the trigger message (message_id) and 50 before it
+    items_to_delete = [message_id] + list(range(message_id - 1, message_id - 51, -1))
+    
+    count = 0
+    for mid in items_to_delete:
         try:
             await context.bot.delete_message(chat_id, mid)
-            n += 1
+            count += 1
         except Exception:
-            pass # Ignore errors (already deleted, too old, etc)
+            pass # Ignore errors (user messages, old messages, etc)
+            
+    # Delete the status message itself
+    try:
+        await context.bot.delete_message(chat_id, status_msg.message_id)
+    except:
+        pass
     
-    # Also delete the status message itself if possible, but we just re-dashboard
     await admin_dashboard(update, context)
 
 # Helper for Timer
