@@ -111,7 +111,7 @@ def main():
     from handlers.manager import post_manager, handle_manager_callback, edit_post_conv
     from handlers.stats import stats_dashboard
     from handlers.bulk import bulk_conv
-    from handlers.backup import export_data
+    from handlers.backup import export_data, backup_menu, import_conv
     from handlers.search import search_conv
 
     from handlers.categories import category_conv
@@ -130,6 +130,7 @@ def main():
     application.add_handler(sched_edit_conv)
     application.add_handler(broadcast_conv)
     application.add_handler(user_search_conv)
+    application.add_handler(import_conv) # Backup/Restore
 
     # Callbacks
     application.add_handler(CallbackQueryHandler(handle_not_joined, pattern="^check_sub_"))
@@ -150,7 +151,8 @@ def main():
     application.add_handler(MessageHandler(filters.Regex("^⚙️ Settings$"), settings_dashboard))
 
     application.add_handler(MessageHandler(filters.Regex("^📊 Statistics$"), stats_dashboard))
-    application.add_handler(MessageHandler(filters.Regex("^💾 Backup & Export$"), export_data))
+    application.add_handler(MessageHandler(filters.Regex("^💾 Backup & Export$"), backup_menu))
+    application.add_handler(MessageHandler(filters.Regex("^📥 Download Backup$"), export_data))
     application.add_handler(MessageHandler(filters.Regex("^🧹 Clear Chat$"), clear_chat_history))
     application.add_handler(MessageHandler(filters.Regex("^⏳ Scheduled Posts$"), scheduled_dashboard))
     application.add_handler(MessageHandler(filters.Regex("^👥 Users$"), users_dashboard))
