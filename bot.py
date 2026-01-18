@@ -1,11 +1,24 @@
 import logging
 import os
+import threading
+from http.server import SimpleHTTPRequestHandler
+from socketserver import TCPServer
+
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, CallbackQueryHandler, MessageHandler, filters, PicklePersistence
 
 import datetime
 
 from config import TELEGRAM_TOKEN
+
+# Dummy Server for Render Binding
+def start_dummy_server():
+    port = int(os.environ.get("PORT", 8080))
+    handler = SimpleHTTPRequestHandler
+    with TCPServer(("", port), handler) as httpd:
+        print(f"Dummy server executing on port {port}")
+        httpd.serve_forever()
+
 # Handlers will be imported here
 # from handlers import admin, user
 from storage import get_pending_scheduled_posts, update_post
@@ -138,6 +151,10 @@ def main():
     application.add_handler(MessageHandler(filters.Regex("^(🏠 Dashboard|🔙 Back)$"), admin_dashboard))  
 
     application.add_error_handler(error_handler)
+
+    # Start Dummy Server in Background Thread
+    server_thread = threading.Thread(target=start_dummy_server, daemon=True)
+    server_thread.start()
 
     print("Bot started...")
     application.run_polling()
