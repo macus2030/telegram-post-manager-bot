@@ -670,7 +670,6 @@ async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return MC_INPUT_NEWS
 
 async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
-async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         # Prepare variables
         data = context.user_data
