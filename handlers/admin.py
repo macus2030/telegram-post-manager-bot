@@ -129,18 +129,14 @@ async def scheduled_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     pending = get_pending_scheduled_posts()
     
-    if not pending:
-         await update.message.reply_text("⏳ **Scheduled Posts**\n\nNo active scheduled posts.")
-         return
-         
-    text = "⏳ **Scheduled Posts** (Upcoming)\n\n"
-    now = datetime.datetime.now().timestamp()
+    text = "⏳ **Scheduled Posts**\n\nSelect a post to manage:"
+    kb = []
     
     count = 0
+    now = datetime.datetime.now().timestamp()
+    
     for pid, data in pending:
-        # Check active
         if not data.get("is_scheduled"): continue
-        
         ts = data.get("scheduled_for")
         if not ts: continue
         
@@ -149,18 +145,220 @@ async def scheduled_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE
         ist = dt + datetime.timedelta(hours=5, minutes=30)
         time_str = ist.strftime('%d-%b %I:%M %p')
         
-        status = data.get("status", "pending")
-        if status == "failed": icon = "🔴"
-        elif status == "sent": icon = "🟢"
-        else: icon = "🟡" # Pending
-        
-        text += f"{icon} **#{pid}** - `{time_str}` IST\n"
+        label = f"#{pid} - {time_str}"
+        kb.append([InlineKeyboardButton(label, callback_data=f"sched_manage_{pid}")])
         count += 1
         
     if count == 0:
-        text += "No active scheduled posts."
+        text = "⏳ **Scheduled Posts**\n\nNo active scheduled posts."
+    
+    # Add Refresh/Dashboard
+    kb.append([InlineKeyboardButton("🔄 Refresh", callback_data="sched_refresh"), InlineKeyboardButton("🏠 Dashboard", callback_data="sched_dashboard")])
+    
+    current_reply_markup = InlineKeyboardMarkup(kb)
+    
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(text=text, reply_markup=current_reply_markup, parse_mode=ParseMode.MARKDOWN)
+    else:
+        await update.message.reply_text(text, reply_markup=current_reply_markup, parse_mode=ParseMode.MARKDOWN)
+
+# --- SCHEDULE SCHEDULE ACTIONS ---
+SCHED_UPDATE_TIME = 100
+
+async def handle_schedule_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+    
+    if data == "sched_refresh" or data == "sched_list":
+        await scheduled_dashboard(update, context)
+        return
         
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    if data == "sched_dashboard":
+        await query.message.delete()
+        await admin_dashboard(update, context)
+        return
+
+    if data.startswith("sched_manage_"):
+        pid = data.split("_")[-1]
+        post = get_post(pid)
+        if not post:
+             await query.answer("Post not found", show_alert=True)
+             await scheduled_dashboard(update, context)
+             return
+             
+        ts = post.get("scheduled_for")
+        dt = datetime.datetime.fromtimestamp(ts)
+        ist = dt + datetime.timedelta(hours=5, minutes=30)
+        time_str = ist.strftime('%d-%b %I:%M %p')
+        
+        text = (
+            f"⏳ **Managing Post #{pid}**\n\n"
+            f"Scheduled for: `{time_str}` IST\n"
+            f"Channel: {post.get('target_chat_id')}\n"
+            f"Preview: {post.get('channel_preview_text')[:50]}..."
+        )
+        
+        kb = [
+            [InlineKeyboardButton("🚀 Post Now", callback_data=f"sched_now_{pid}")],
+            [InlineKeyboardButton("✏ Edit Time", callback_data=f"sched_edit_{pid}")],
+            [InlineKeyboardButton("🗑 Delete Schedule", callback_data=f"sched_del_{pid}")],
+            [InlineKeyboardButton("🔙 Back", callback_data="sched_list")]
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
+        
+    elif data.startswith("sched_del_"):
+        pid = data.split("_")[-1]
+        
+        # Remove job
+        jobs = context.job_queue.get_jobs_by_name(f"sched_{pid}")
+        for j in jobs: j.schedule_removal()
+        
+        # Update DB
+        update_post(pid, {"is_scheduled": False, "status": "active", "scheduled_for": None})
+        
+        await query.answer("✅ Schedule deleted!")
+        await scheduled_dashboard(update, context)
+        
+    elif data.startswith("sched_now_"):
+        pid = data.split("_")[-1]
+        
+        # Remove job
+        jobs = context.job_queue.get_jobs_by_name(f"sched_{pid}")
+        for j in jobs: j.schedule_removal()
+        
+        # Execute immediately
+        post = get_post(pid)
+        await send_scheduled_post_job(context._application.job_queue.run_once(lambda x: None, 0, data={
+            "chat_id": post.get("target_chat_id"),
+            "text": post.get("channel_preview_text"),
+            "post_id": pid
+        })) 
+        # Wait, I can't mock Job easily.
+        # Just call function directly? 
+        # send_scheduled_post_job expects context with job.data
+        # Making a fake job...
+        
+        class FakeJob:
+            def __init__(self, d): self.data = d
+        
+        context.job = FakeJob({
+            "chat_id": post.get("target_chat_id"),
+            "text": post.get("channel_preview_text"),
+            "post_id": pid
+        })
+        
+        await send_scheduled_post_job(context)
+        await query.answer("✅ Posted to channel!")
+        await scheduled_dashboard(update, context)
+
+# --- EDIT SCHEDULE CONVERSATION ---
+
+async def start_edit_schedule_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    pid = query.data.split("_")[-1]
+    context.user_data['sched_edit_pid'] = pid
+    
+    await query.answer()
+    await query.message.reply_text(
+        f"⏳ **Update Time for #{pid}**\n\n"
+        "Enter new delay in minutes (e.g., `10`) or time `HH:MM`:",
+        reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True)
+    )
+    return SCHED_UPDATE_TIME
+
+async def save_schedule_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text == "❌ Cancel":
+        await update.message.reply_text("❌ Edit Cancelled.")
+        await admin_dashboard(update, context)
+        return ConversationHandler.END
+        
+    pid = context.user_data.get('sched_edit_pid')
+    
+    # Parse time (Reuse logic from mc_schedule_input? Simplified here)
+    delay_seconds = 0
+    import datetime
+    try:
+        if text.isdigit():
+            mins = int(text)
+            delay_seconds = mins * 60
+        elif ":" in text:
+            now = datetime.datetime.now() # UTC usually on server?
+            # User Input: HH:MM is IST
+            # Server Now: UTC or Local? 
+            # In mc_schedule_input we did:
+            # 1. Parse text as HH:MM
+            # 2. Treat that time as IST
+            # 3. Convert IST -> UTC
+            # 4. UTC - Now(UTC) = Delay
+            
+            # Let's copy logic
+            ist_offset = datetime.timedelta(hours=5, minutes=30)
+            utc_now = datetime.datetime.utcnow()
+            ist_now = utc_now + ist_offset
+            
+            target_time_ist = datetime.datetime.strptime(text, "%H:%M").replace(
+                year=ist_now.year, month=ist_now.month, day=ist_now.day
+            )
+            
+            if target_time_ist < ist_now:
+                 target_time_ist += datetime.timedelta(days=1)
+                 
+            # IST -> UTC
+            target_time_utc = target_time_ist - ist_offset
+            delay_seconds = (target_time_utc - utc_now).total_seconds()
+            
+        else:
+            raise ValueError("Invalid format")
+            
+        if delay_seconds < 10:
+             await update.message.reply_text("⚠ Time must be in the future. Try again.")
+             return SCHED_UPDATE_TIME
+
+        # Re-Schedule
+        jobs = context.job_queue.get_jobs_by_name(f"sched_{pid}")
+        for j in jobs: j.schedule_removal()
+        
+        post = get_post(pid)
+        target_chat_id = post.get("target_chat_id")
+        preview_text = post.get("channel_preview_text")
+        
+        scheduled_for_ts = datetime.datetime.utcnow().timestamp() + delay_seconds
+        
+        update_post(pid, {
+            "scheduled_for": int(scheduled_for_ts)
+        })
+        
+        context.job_queue.run_once(
+            send_scheduled_post_job, 
+            delay_seconds,
+            chat_id=target_chat_id,
+            name=f"sched_{pid}",
+            data={
+                "chat_id": target_chat_id,
+                "text": preview_text,
+                "post_id": pid
+            }
+        )
+        
+        new_ist = datetime.datetime.fromtimestamp(scheduled_for_ts) + datetime.timedelta(hours=5, minutes=30)
+        
+        await update.message.reply_text(f"✅ **Updated!** New time: `{new_ist.strftime('%d-%b %I:%M %p')} IST`", parse_mode=ParseMode.MARKDOWN)
+        await admin_dashboard(update, context)
+        return ConversationHandler.END
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+        return SCHED_UPDATE_TIME
+
+sched_edit_conv = ConversationHandler(
+    entry_points=[CallbackQueryHandler(start_edit_schedule_time, pattern="^sched_edit_")],
+    states={
+        SCHED_UPDATE_TIME: [MessageHandler(filters.TEXT, save_schedule_time)]
+    },
+    fallbacks=[CommandHandler("cancel", cancel)]
+)
 
 # --- CREATE POST WORKFLOW ---
 
@@ -1058,7 +1256,9 @@ async def mc_schedule_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
             except Exception as e:
                 import traceback
                 logging.error(f"Schedule Confirm Error: {e}", exc_info=True)
-                await update.message.reply_text(f"❌ Error during schedule execution: {e}")
+                await update.message.reply_text(f"❌ Error during schedule execution: {e}\n\nPlease try again or click Cancel.")
+                # Return to confirm state so user can Cancel or Edit
+                return MC_SCHEDULE_CONFIRM
                 
             await admin_dashboard(update, context)
             return ConversationHandler.END
@@ -1067,8 +1267,8 @@ async def mc_schedule_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         import traceback
         logging.error(f"Schedule Confirm Global Error: {e}", exc_info=True)
-        await update.message.reply_text(f"❌ Critical Error in Confirm: {e}")
-        return ConversationHandler.END
+        await update.message.reply_text(f"❌ Critical Error in Confirm: {e}\n\nPlease try again or click Cancel.")
+        return MC_SCHEDULE_CONFIRM
 
 
 

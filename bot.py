@@ -35,7 +35,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Log the error and send a telegram message to notify the developer."""
-    logging.error(f"Exception while handling an update: {context.error}")
+    logging.error(f"Exception while handling an update: {context.error}", exc_info=True)
 
 async def restore_scheduled_jobs(application):
     """Restore pending jobs from database on startup."""
@@ -106,7 +106,7 @@ def main():
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).persistence(persistence).post_init(post_init).build()
 
     # Register Handlers
-    from handlers.admin import create_post_conv, admin_dashboard, clear_chat_history, main_channel_conv, scheduled_dashboard
+    from handlers.admin import create_post_conv, admin_dashboard, clear_chat_history, main_channel_conv, scheduled_dashboard, sched_edit_conv, handle_schedule_callback
     from handlers.user import start_user, handle_not_joined
     from handlers.manager import post_manager, handle_manager_callback, edit_post_conv
     from handlers.stats import stats_dashboard
@@ -125,10 +125,12 @@ def main():
     application.add_handler(bulk_conv)
     application.add_handler(search_conv)
     application.add_handler(edit_post_conv)
+    application.add_handler(sched_edit_conv)
 
     # Callbacks
     application.add_handler(CallbackQueryHandler(handle_not_joined, pattern="^check_sub_"))
-    application.add_handler(CallbackQueryHandler(handle_manager_callback, pattern="^(?!cat_|add_new_category|back_to_dashboard|check_sub_).*")) 
+    application.add_handler(CallbackQueryHandler(handle_schedule_callback, pattern="^sched_"))
+    application.add_handler(CallbackQueryHandler(handle_manager_callback, pattern="^(?!cat_|add_new_category|back_to_dashboard|check_sub_|sched_).*")) 
     # Old category callbacks are no longer needed as we use ReplyKeyboard, but keeping pattern exclusion in manager is fine.
     
     # Commands
