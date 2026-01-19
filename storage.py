@@ -393,6 +393,30 @@ def save_last_news(content: str):
         conn.commit()
         conn.close()
 
+def get_auto_delete_timer() -> int:
+    """Returns global auto-delete timer in SECONDS."""
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT value FROM config WHERE key = 'auto_delete_timer'")
+        row = c.fetchone()
+        conn.close()
+        
+    if row:
+        try:
+            return int(row[0])
+        except:
+            pass
+    return 1800 # Default 30 mins
+
+def update_auto_delete_timer(seconds: int):
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ("auto_delete_timer", str(seconds)))
+        conn.commit()
+        conn.close()
+
 
 # --- Categories ---
 

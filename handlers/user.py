@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 from telegram.constants import ParseMode
 from storage import get_post, update_post, is_banned, add_user
-from config import AUTO_DELETE_SECONDS
+
 from utils.helpers import send_temp_message, check_admin, check_membership, get_post_timer
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import asyncio

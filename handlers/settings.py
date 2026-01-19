@@ -1,14 +1,14 @@
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, MessageOriginChannel
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
-from storage import get_message_template, update_message_template, get_help_link, update_help_link, get_main_template, update_main_template
+from storage import get_message_template, update_message_template, get_help_link, update_help_link, get_main_template, update_main_template, get_auto_delete_timer, update_auto_delete_timer
 from utils.helpers import check_admin
 from config import HOW_TO_OPEN_LINK
 from handlers.admin import MENU_REGEX, global_fallback, cancel
 import logging
 
 # States
-SELECT_SETTING, EDIT_MSG_TEMPLATE, EDIT_HELP_LINK, EDIT_MAIN_TEMPLATE, MANAGE_FORCE_SUB, ADD_FS_CHANNEL = range(6)
+SELECT_SETTING, EDIT_MSG_TEMPLATE, EDIT_HELP_LINK, EDIT_MAIN_TEMPLATE, MANAGE_FORCE_SUB, ADD_FS_CHANNEL, EDIT_GLOBAL_TIMER = range(7)
 
 async def settings_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entry point for Settings."""
@@ -25,6 +25,7 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     kb = [
         ["📝 Edit Message Template", "📢 Edit Main Channel Template"],
         ["🔗 Edit Help Link", "🔐 Manage Force Subscribe"],
+        ["⏱️ Edit Global Timer"],
         ["🔙 Back to Dashboard"]
     ]
     
@@ -80,6 +81,19 @@ async def handle_setting_selection(update: Update, context: ContextTypes.DEFAULT
 
     if text == "🔐 Manage Force Subscribe":
         return await manage_force_sub(update, context)
+
+    if text == "⏱️ Edit Global Timer":
+        current_seconds = get_auto_delete_timer()
+        current_mins = int(current_seconds / 60)
+        await update.message.reply_text(
+            "⏱️ *Edit Global Auto-Delete Timer*\n\n"
+            f"Current Timer: **{current_mins} minutes**\n\n"
+            "This timer applies to all posts unless they have a custom timer set.\n"
+            "Send the new time in **minutes** (e.g. `30`, `60`).",
+            reply_markup=ReplyKeyboardMarkup([["❌ Cancel", "🏠 Dashboard"]], resize_keyboard=True),
+            parse_mode="Markdown"
+        )
+        return EDIT_GLOBAL_TIMER
 
     await update.message.reply_text("Invalid selection.")
     return SELECT_SETTING
@@ -250,6 +264,23 @@ async def save_main_template(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text("✅ Main Channel Template updated!", parse_mode="Markdown")
     return await show_settings_menu(update, context)
 
+async def save_global_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text == "❌ Cancel":
+        return await show_settings_menu(update, context)
+        
+    if not text.isdigit():
+        await update.message.reply_text("⚠ Invalid input. Please enter a number in minutes.")
+        return EDIT_GLOBAL_TIMER
+        
+    mins = int(text)
+    seconds = mins * 60
+    
+    update_auto_delete_timer(seconds)
+    
+    await update.message.reply_text(f"✅ Global Timer updated to **{mins} minutes**.", parse_mode="Markdown")
+    return await show_settings_menu(update, context)
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Cancelled.")
     from handlers.admin import admin_dashboard
@@ -264,6 +295,7 @@ settings_conv = ConversationHandler(
             MessageHandler(filters.Regex("^🔗 Edit Help Link$"), handle_setting_selection),
             MessageHandler(filters.Regex("^📢 Edit Main Channel Template$"), handle_setting_selection),
             MessageHandler(filters.Regex("^🔐 Manage Force Subscribe$"), handle_setting_selection),
+            MessageHandler(filters.Regex("^⏱️ Edit Global Timer$"), handle_setting_selection),
             MessageHandler(filters.Regex("^🔙 Back to Dashboard$"), handle_setting_selection)
         ],
         EDIT_MSG_TEMPLATE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_msg_template)],
@@ -276,7 +308,8 @@ settings_conv = ConversationHandler(
             CallbackQueryHandler(remove_fs_callback, pattern="^fs_rem_"),
             MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), guide_fs_action)
         ],
-        ADD_FS_CHANNEL: [MessageHandler((filters.TEXT | filters.FORWARDED) & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), add_fs_channel)]
+        ADD_FS_CHANNEL: [MessageHandler((filters.TEXT | filters.FORWARDED) & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), add_fs_channel)],
+        EDIT_GLOBAL_TIMER: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_global_timer)]
     },
     fallbacks=[
         MessageHandler(filters.Regex(MENU_REGEX), global_fallback),

@@ -100,13 +100,18 @@ async def check_membership(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> 
 
 def get_post_timer(post: dict) -> int:
     """Get auto-delete timer for specific post or default."""
-    from config import AUTO_DELETE_SECONDS
+    from storage import get_auto_delete_timer
+    
     # Check if post has override
     if post.get("auto_delete_timer"):
          minutes = int(post.get("auto_delete_timer"))
-         return minutes * 60
+         if minutes > 0: # Only if positive, 0 might mean default in future? But "Set 0 to use Global Default" -> so 0 in DB means None or ignored. Post creation sets auto_delete_timer to None or deletes key if 0. 
+             # admin.py stores it as: "auto_delete_timer": data.get('auto_delete_timer') where data has it if input was not 0.
+             # If user entered 0, it reset to default (deleted key).
+             # So if key exists, it's an override.
+             return minutes * 60
          
-    return AUTO_DELETE_SECONDS
+    return get_auto_delete_timer()
 
 # --- Obfuscation ---
 import base64

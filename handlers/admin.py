@@ -2,8 +2,8 @@ from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKe
 import html
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 from telegram.constants import ParseMode, ChatAction
-from config import ADMIN_ID, AUTO_DELETE_SECONDS, MAIN_CHANNEL_ID
-from storage import add_post, save_template, get_templates, get_message_template, get_help_link, get_post, get_main_template, update_post, get_latest_post_id, get_last_news, save_last_news
+from config import ADMIN_ID, MAIN_CHANNEL_ID
+from storage import add_post, save_template, get_templates, get_message_template, get_help_link, get_post, get_main_template, update_post, get_latest_post_id, get_last_news, save_last_news, get_auto_delete_timer
 from utils.helpers import send_temp_message, show_loading, escape_markdown_v2, check_admin, validate_link
 import time
 import logging
@@ -754,8 +754,10 @@ async def show_final_confirmation(update: Update, context: ContextTypes.DEFAULT_
     data = context.user_data
     
     # Timer Display
+    # Timer Display
     timer_val = data.get('auto_delete_timer')
-    timer_str = f"{timer_val} mins" if timer_val else f"Default ({int(AUTO_DELETE_SECONDS/60)} mins)"
+    global_timer = get_auto_delete_timer()
+    timer_str = f"{timer_val} mins" if timer_val else f"Default ({int(global_timer/60)} mins)"
     
     preview_text = (
         "📋 *Confirm Post Creation*\n\n"
@@ -832,7 +834,7 @@ async def final_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         template = re.sub(r"(?i)^.*(Download/Watch Link|Link👇).*$\n?", "", template, flags=re.MULTILINE)
     
     custom_timer_mins = data.get('auto_delete_timer')
-    preview_seconds = int(custom_timer_mins) * 60 if custom_timer_mins else AUTO_DELETE_SECONDS
+    preview_seconds = int(custom_timer_mins) * 60 if custom_timer_mins else get_auto_delete_timer()
 
     variables = {
         "post_id": post_id,
