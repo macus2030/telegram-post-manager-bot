@@ -99,13 +99,23 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     variables = {
         "post_id": post_id,
-        "caption": post.get("caption", ""),
         "category": post.get("category", "Uncategorized"),
         "time": int(timer_seconds/60),
         "time_sec": timer_seconds,
         "link": post_link,
         "how_to_open_link": get_help_link()
     }
+    
+    # Pre-format caption to replace internal variables like {link}
+    raw_caption = post.get("caption", "")
+    try:
+        # We assume caption might use same variables except 'caption'
+        processed_caption = raw_caption.format(**variables)
+    except:
+        # If formatting fails (e.g. invalid keys), keep raw
+        processed_caption = raw_caption
+        
+    variables["caption"] = processed_caption
     
     try:
         final_caption = template.format(**variables)

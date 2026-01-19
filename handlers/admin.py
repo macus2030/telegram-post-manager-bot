@@ -838,13 +838,21 @@ async def final_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     variables = {
         "post_id": post_id,
-        "caption": data['caption'],
         "category": data['category'],
         "time": int(preview_seconds/60),
         "time_sec": preview_seconds,
         "link": post_link,
         "how_to_open_link": get_help_link()
     }
+    
+    # Pre-format caption
+    raw_caption = data.get('caption', '')
+    try:
+        processed_caption = raw_caption.format(**variables)
+    except:
+        processed_caption = raw_caption
+    
+    variables["caption"] = processed_caption
     
     try:
         preview_text = template.format(**variables)
