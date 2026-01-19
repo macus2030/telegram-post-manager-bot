@@ -104,6 +104,12 @@ async def render_post_detail(update: Update, context: ContextTypes.DEFAULT_TYPE,
         f"**Views**: {post.get('views')}\n"
         f"**Link**: {post.get('link', 'N/A')}\n"
         f"**File**: {post.get('file_name', 'N/A')}\n"
+    )
+    
+    if post.get('password'):
+        text += f"**Password**: `{post.get('password')}`\n"
+        
+    text += (
         f"**Timer**: {post.get('auto_delete_timer', 'Default')} mins\n\n"
         f"**Caption**:\n_{post.get('caption')}_"
     )
@@ -135,13 +141,20 @@ async def start_edit_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     post_id = query.data.split("_")[1]
     context.user_data['edit_pid'] = post_id
     
+    post = get_post(post_id)
+    
     kb = [
         [InlineKeyboardButton("📝 Edit Caption", callback_data="field_caption")],
         [InlineKeyboardButton("🏷 Edit Category", callback_data="field_category")],
         [InlineKeyboardButton("🔗 Edit Link", callback_data="field_link")],
-        [InlineKeyboardButton("⏱️ Edit Timer", callback_data="field_timer")],
-        [InlineKeyboardButton("🔙 Cancel", callback_data="cancel_edit")]
+        [InlineKeyboardButton("⏱️ Edit Timer", callback_data="field_timer")]
     ]
+    
+    if post and post.get('type') == 'file':
+        kb.insert(1, [InlineKeyboardButton("📂 Reupload File", callback_data="field_file")])
+        kb.insert(2, [InlineKeyboardButton("🔑 Edit Password", callback_data="field_password")])
+        
+    kb.append([InlineKeyboardButton("🔙 Cancel", callback_data="cancel_edit")])
     
     await query.edit_message_text(
         f"✏ *Editing Post #{post_id}*\n\nSelect what you want to edit:",
@@ -165,7 +178,9 @@ async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "field_caption": "caption",
         "field_category": "category",
         "field_link": "link",
-        "field_timer": "auto_delete_timer"
+        "field_timer": "auto_delete_timer",
+        "field_file": "file",
+        "field_password": "password"
     }
     
     field = field_map.get(data)
@@ -199,6 +214,10 @@ async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prompt = "🔗 Send the new *Link* URL:"
     elif field == "auto_delete_timer":
         prompt = "⏱️ Send new **Auto-Delete Timer** in minutes (e.g. `10`, `60`).\nSend `0` to use Global Default."
+    elif field == "file":
+        prompt = "📂 Send the **New File** (Document, Video, or Audio) to replace the existing one:"
+    elif field == "password":
+        prompt = "🔑 Send the **New Password** for this file post:"
         
     kb = [[InlineKeyboardButton("🔙 Cancel", callback_data="cancel_edit")]]
     
@@ -210,28 +229,79 @@ async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return EDIT_INPUT
 
 async def edit_input_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
     pid = context.user_data.get('edit_pid')
     field = context.user_data.get('edit_field')
     
     if not pid or not field:
         await update.message.reply_text("❌ Error: Session expired.")
         return ConversationHandler.END
-        
-    # Validation/Formatting for specific fields
-    if field == "link":
-        text = text.strip()
-        if not (text.startswith("http://") or text.startswith("https://")):
-            text = f"https://{text}"
-    
-    if field == "auto_delete_timer":
-        if not text.isdigit():
-             await update.message.reply_text("❌ Invalid input. Please enter a number (minutes).")
-             return EDIT_INPUT
 
+    updates = {}
+    
+    # Handle File Upload
+    if field == "file":
+        doc = update.message.effective_attachment
+        if isinstance(doc, list): doc = doc[-1] # Photo gives list
+        
+        if not doc:
+            await update.message.reply_text("❌ Please send a valid file/video/audio.")
+            return EDIT_INPUT
+            
+        # Get attributes
+        file_id = doc.file_id
+        file_unique_id = doc.file_unique_id
+        file_name = getattr(doc, 'file_name', f"file_{pid}")
+        mime_type = getattr(doc, 'mime_type', 'application/octet-stream')
+        file_size = getattr(doc, 'file_size', 0)
+        
+        updates = {
+            "file_id": file_id,
+            "file_unique_id": file_unique_id,
+            "file_name": file_name,
+            "mime_type": mime_type,
+            "file_size": file_size
+        }
+        
+    else:
+        # Handle Text Inputs
+        text = update.message.text
+        if not text:
+             await update.message.reply_text("❌ text expected.")
+             return EDIT_INPUT
+             
+        updates = {field: text}
+
+        # Validation/Formatting for specific fields
+        if field == "link":
+            text = text.strip()
+            if not (text.startswith("http://") or text.startswith("https://")):
+                text = f"https://{text}"
+            updates[field] = text
+        
+        elif field == "auto_delete_timer":
+            if not text.isdigit():
+                 await update.message.reply_text("❌ Invalid input. Please enter a number (minutes).")
+                 return EDIT_INPUT
+            updates[field] = text
+                 
+        elif field == "password":
+            # Sync with caption
+            current_post = get_post(pid)
+            current_caption = current_post.get("caption", "")
+            import re
+            # Replace existing password line or append
+            if "Password:" in current_caption:
+                new_caption = re.sub(r"(Password:\s*)(.*)", f"\\g<1>{text}", current_caption)
+                updates["caption"] = new_caption
+            else:
+                # If not found, maybe append it?
+                pass
+            
+            # Explicitly set password field
+            updates["password"] = text
 
     # Update DB
-    update_post(pid, {field: text})
+    update_post(pid, updates)
     
     await update.message.reply_text(f"✅ *{field.capitalize()} updated!*", parse_mode=ParseMode.MARKDOWN)
     
@@ -367,6 +437,7 @@ edit_post_conv = ConversationHandler(
         EDIT_CHOICE: [CallbackQueryHandler(edit_choice, pattern="^(field_|cancel_edit)")],
         EDIT_INPUT: [
             MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), edit_input_value),
+            MessageHandler(filters.Document.ALL | filters.VIDEO | filters.AUDIO | filters.PHOTO, edit_input_value),
             CallbackQueryHandler(edit_choice, pattern="^cancel_edit$")
         ],
         EDIT_CATEGORY_SELECT: [
