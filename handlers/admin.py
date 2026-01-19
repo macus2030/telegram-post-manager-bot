@@ -257,28 +257,18 @@ async def handle_schedule_callback(update: Update, context: ContextTypes.DEFAULT
         
         # Execute immediately
         post = get_post(pid)
-        await send_scheduled_post_job(context._application.job_queue.run_once(lambda x: None, 0, data={
-            "chat_id": post.get("target_chat_id"),
-            "text": post.get("channel_preview_text"),
-            "post_id": pid
-        })) 
-        # Wait, I can't mock Job easily.
-        # Just call function directly? 
-        # send_scheduled_post_job expects context with job.data
-        # Making a fake job...
+        target_chat_id = post.get("target_chat_id")
+        preview_text = post.get("channel_preview_text")
+
+        # Call helper directly
+        success = await execute_scheduled_post(context, pid, target_chat_id, preview_text)
         
-        class FakeJob:
-            def __init__(self, d): self.data = d
-        
-        context.job = FakeJob({
-            "chat_id": post.get("target_chat_id"),
-            "text": post.get("channel_preview_text"),
-            "post_id": pid
-        })
-        
-        await send_scheduled_post_job(context)
-        await query.answer("✅ Posted to channel!")
-        await scheduled_dashboard(update, context)
+        if success:
+            await query.answer("✅ Posted to channel!")
+            await scheduled_dashboard(update, context)
+        else:
+             await query.answer("❌ Failed to post. Check logs.", show_alert=True)
+
 
 # --- EDIT SCHEDULE CONVERSATION ---
 
@@ -1229,15 +1219,8 @@ async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return MC_CONFIRM
 
-async def send_scheduled_post_job(context: ContextTypes.DEFAULT_TYPE):
-    """Job to send the scheduled post."""
-    job = context.job
-    data = job.data
-    
-    chat_id = data['chat_id']
-    text = data['text']
-    post_id = data['post_id']
-    
+async def execute_scheduled_post(context: ContextTypes.DEFAULT_TYPE, post_id: str, chat_id: int, text: str):
+    """Core logic to send post and update DB. Returns True if successful."""
     try:
         msg = await context.bot.send_message(
             chat_id=chat_id,
@@ -1256,12 +1239,30 @@ async def send_scheduled_post_job(context: ContextTypes.DEFAULT_TYPE):
             "retry_count": 0
         })
         print(f"Scheduled Post #{post_id} sent successfully.")
+        return True
         
     except Exception as e:
         print(f"Failed to send scheduled post #{post_id}: {e}")
-        
+        return False
+
+async def send_scheduled_post_job(context: ContextTypes.DEFAULT_TYPE):
+    """Job to send the scheduled post. Uses execute_scheduled_post."""
+    job = context.job
+    data = job.data
+    
+    chat_id = data['chat_id']
+    text = data['text']
+    post_id = data['post_id']
+    
+    success = await execute_scheduled_post(context, post_id, chat_id, text)
+    
+    if not success:
         # Retry Logic
+        # We need to re-read post to get current retry count? Or rely on memory?
+        # Better to re-read to avoid race conditions if needed, but here simple is ok.
         post = get_post(post_id)
+        if not post: return # Deleted?
+
         retry_count = post.get("retry_count", 0)
         
         if retry_count < 3:
@@ -1283,8 +1284,9 @@ async def send_scheduled_post_job(context: ContextTypes.DEFAULT_TYPE):
              update_post(post_id, {
                  "status": "failed", 
                  "is_scheduled": False,
-                 "note": f"Failed after 3 retries. Error: {e}"
+                 "note": "Failed after 3 retries (Job Queue)."
              })
+
 
 async def mc_sched_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
