@@ -137,7 +137,7 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         # 5. Schedule Auto-Delete
         if sent_msg:
-             context.job_queue.run_once(auto_delete_job, timer_seconds, chat_id=update.effective_chat.id, data=sent_msg.message_id)
+             context.job_queue.run_once(auto_delete_job, timer_seconds, chat_id=update.effective_chat.id, data={'msg_id': sent_msg.message_id, 'timer': timer_seconds})
             
     except Exception as e:
         traceback.print_exc()
@@ -147,10 +147,38 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def auto_delete_job(context: ContextTypes.DEFAULT_TYPE):
     """Job to delete the message."""
     job = context.job
-    try:
-        await context.bot.delete_message(chat_id=job.chat_id, message_id=job.data)
-    except Exception as e:
-        pass
+    data = job.data
+    
+    msg_id = None
+    timer = None
+    
+    # Backward compatibility
+    if isinstance(data, int):
+        msg_id = data
+    elif isinstance(data, dict):
+        msg_id = data.get('msg_id')
+        timer = data.get('timer')
+        
+    if msg_id:
+        try:
+            await context.bot.delete_message(chat_id=job.chat_id, message_id=msg_id)
+            
+            # Send Notification if timer is known
+            if timer:
+                mins = timer / 60
+                if mins >= 1:
+                    time_str = f"{int(mins)} mins"
+                else:
+                    time_str = f"{timer} seconds"
+                    
+                await context.bot.send_message(
+                    chat_id=job.chat_id, 
+                    text=f"{time_str} is completed, and your file has been successfully deleted. ✅",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                
+        except Exception as e:
+            pass
 
 async def handle_not_joined(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
