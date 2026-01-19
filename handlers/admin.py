@@ -1252,7 +1252,7 @@ async def send_scheduled_post_job(context: ContextTypes.DEFAULT_TYPE):
             "channel_message_id": msg.message_id,
             "is_scheduled": False, # Done
             "scheduled_for": None,
-            "status": "sent",
+            "status": "active",
             "retry_count": 0
         })
         print(f"Scheduled Post #{post_id} sent successfully.")

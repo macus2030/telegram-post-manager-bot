@@ -73,8 +73,17 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
         
     if post.get("status") != "active":
-        await update.message.reply_text("❌ This post is currently unavailable.")
-        return
+        # Allow Admin to view (with warning)
+        if check_admin(user.id):
+            await update.message.reply_text(
+                f"⚠️ **Admin Warning**: This post is currently `{post.get('status')}`.\n"
+                "Users cannot see this.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            # Proceed to show content...
+        else:
+            await update.message.reply_text("❌ This post is currently unavailable.")
+            return
         
     # TODO: Check expires_at logic if implemented
     
