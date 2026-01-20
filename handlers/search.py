@@ -102,6 +102,7 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
     
     # Show results
+    import html
     summary = f"🔍 Found {len(results)} matches"
     if type_filter: summary += f" (Type: {type_filter})"
     if status_filter: summary += f" (Status: {status_filter})"
@@ -110,9 +111,10 @@ async def perform_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for pid, p in results[:10]:
         icon = "📂" if p.get("type") == "file" else "🔗"
         st = "active" if p.get("status")=="active" else "🔴"
-        summary += f"#{pid} {st} {icon} {p.get('caption')[:30]}...\n"
+        safe_caption = html.escape(p.get('caption', '')[:30])
+        summary += f"#{pid} {st} {icon} {safe_caption}...\n"
         
-    await update.message.reply_text(summary)
+    await update.message.reply_text(summary, parse_mode=ParseMode.HTML)
     
     from handlers.admin import admin_dashboard
     await admin_dashboard(update, context)

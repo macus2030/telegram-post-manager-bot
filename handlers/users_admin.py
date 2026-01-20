@@ -82,10 +82,13 @@ async def perform_user_search(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     status_icon = "🚫 BANNED" if banned else "✅ Active"
     
+    import html
+    safe_username = html.escape(username)
+    
     msg = (
-        f"👤 *User Profile*\n\n"
-        f"🆔 ID: `{user_id}`\n"
-        f"👤 Username: @{username}\n"
+        f"👤 <b>User Profile</b>\n\n"
+        f"🆔 ID: <code>{user_id}</code>\n"
+        f"👤 Username: @{safe_username}\n"
         f"📅 Joined: {join_date}\n"
         f"abc Status: {status_icon}"
     )
@@ -98,7 +101,7 @@ async def perform_user_search(update: Update, context: ContextTypes.DEFAULT_TYPE
         
     kb.append([InlineKeyboardButton("🔙 Back to Users", callback_data="back_users_dash")])
     
-    await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
     return ConversationHandler.END
 
 async def handle_users_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

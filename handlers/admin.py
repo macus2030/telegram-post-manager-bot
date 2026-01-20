@@ -205,10 +205,10 @@ async def handle_schedule_callback(update: Update, context: ContextTypes.DEFAULT
         time_str = ist.strftime('%d-%b %I:%M %p')
         
         text = (
-            f"⏳ **Managing Post #{pid}**\n\n"
-            f"Scheduled for: `{time_str}` IST\n"
+            f"⏳ <b>Managing Post #{pid}</b>\n\n"
+            f"Scheduled for: <code>{time_str}</code> IST\n"
             f"Channel: {post.get('target_chat_id')}\n"
-            f"Preview: {post.get('channel_preview_text')[:50]}..."
+            f"Preview: {html.escape(post.get('channel_preview_text', '')[:50])}..."
         )
         
         kb = [
@@ -218,7 +218,7 @@ async def handle_schedule_callback(update: Update, context: ContextTypes.DEFAULT
             [InlineKeyboardButton("🗑 Delete Schedule", callback_data=f"sched_del_{pid}")],
             [InlineKeyboardButton("🔙 Back", callback_data="sched_list")]
         ]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
 
     elif data.startswith("sched_preview_"):
         pid = data.split("_")[-1]
@@ -891,9 +891,9 @@ async def final_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Re-doing the block to send separately for safety
     await update.message.reply_text(
-        f"✅ *Post Created Successfully!* (#{post_id})\n\n"
-        f"🔗 *Copy Link*:\n`{deep_link}`",
-        parse_mode=ParseMode.MARKDOWN
+        f"✅ <b>Post Created Successfully!</b> (#{post_id})\n\n"
+        f"🔗 <b>Copy Link</b>:\n<code>{deep_link}</code>",
+        parse_mode=ParseMode.HTML
     )
     
     await update.message.reply_text(

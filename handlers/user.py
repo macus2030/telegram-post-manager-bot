@@ -106,13 +106,14 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Determine Timer (Feature)
     timer_seconds = get_post_timer(post)
 
+    import html
     variables = {
         "post_id": post_id,
-        "category": post.get("category", "Uncategorized"),
+        "category": html.escape(str(post.get("category", "Uncategorized"))),
         "time": int(timer_seconds/60),
         "time_sec": timer_seconds,
-        "link": post_link,
-        "how_to_open_link": get_help_link()
+        "link": html.escape(str(post_link)),
+        "how_to_open_link": html.escape(str(get_help_link()))
     }
     
     # Pre-format caption to replace internal variables like {link}

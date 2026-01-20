@@ -27,7 +27,9 @@ async def show_post_list(update: Update, context: ContextTypes.DEFAULT_TYPE, pag
     start = page * PAGE_SIZE
     end = start + len(current_page_posts)
     
-    text = f"📝 *Post Manager* (Filter: {category_filter})\n\n"
+    import html
+    safe_filter = html.escape(category_filter)
+    text = f"📝 <b>Post Manager</b> (Filter: {safe_filter})\n\n"
     
     kb = []
     for pid, p in current_page_posts:
@@ -35,6 +37,8 @@ async def show_post_list(update: Update, context: ContextTypes.DEFAULT_TYPE, pag
         status = "🔴" if p.get("status") == "disabled" else "🟢"
         if p.get("status") == "draft": status = "📝"
             
+        # Button text doesn't support MARKDOWN/HTML anyway, it's plain text.
+        # But we must ensure it doesn't break? No, button dict is safe usually.
         btn_text = f"{status} #{pid} {icon} {p.get('category')} | 👁 {p.get('views')}"
         kb.append([InlineKeyboardButton(btn_text, callback_data=f"view_{pid}")])
     
@@ -69,14 +73,14 @@ async def show_post_list(update: Update, context: ContextTypes.DEFAULT_TYPE, pag
     
     if update.callback_query:
         try:
-            await update.callback_query.edit_message_text(text, reply_markup=markup, parse_mode=ParseMode.MARKDOWN)
+            await update.callback_query.edit_message_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
         except error.BadRequest as e:
             if "Message is not modified" in str(e):
                 pass
             else:
                 raise e # Re-raise if other error
     else:
-        await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
 
 async def view_post_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -86,51 +90,73 @@ async def view_post_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await render_post_detail(update, context, post_id)
 
 async def render_post_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: str):
-    post = get_post(post_id)
-    
-    if not post:
-        text = "❌ Post not found."
-        if update.callback_query:
-            await update.callback_query.edit_message_text(text)
-        else:
-            await update.message.reply_text(text)
-        return
-
-    text = (
-        f"📄 *Post Details #{post_id}*\n\n"
-        f"**Type**: {post.get('type', 'link')}\n"
-        f"**Status**: {post.get('status')}\n"
-        f"**Category**: {post.get('category')}\n"
-        f"**Views**: {post.get('views')}\n"
-        f"**Link**: {post.get('link', 'N/A')}\n"
-        f"**File**: {post.get('file_name', 'N/A')}\n"
-    )
-    
-    if post.get('password'):
-        text += f"**Password**: `{post.get('password')}`\n"
+    import html
+    try:
+        post = get_post(post_id)
         
-    text += (
-        f"**Timer**: {post.get('auto_delete_timer', 'Default')} mins\n\n"
-        f"**Caption**:\n_{post.get('caption')}_"
-    )
-    
-    kb = [
-        [InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_{post_id}")],
-        [InlineKeyboardButton("✏ Edit", callback_data=f"editopt_{post_id}"), InlineKeyboardButton("🧬 Clone", callback_data=f"clone_{post_id}")],
-        [InlineKeyboardButton("🔴 Disable" if post.get("status") == "active" else "🟢 Enable", callback_data=f"toggle_{post_id}"), InlineKeyboardButton("🗑 Delete", callback_data=f"delete_{post_id}")],
-        [InlineKeyboardButton("🔙 Back to List", callback_data="list_All_0")]
-    ]
-    
-    # Add Preview Button
-    kb.insert(1, [InlineKeyboardButton("👁 Preview Content", callback_data=f"preview_{post_id}")])
-    
-    markup = InlineKeyboardMarkup(kb)
-    
-    if update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=markup, parse_mode=ParseMode.MARKDOWN)
-    else:
-        # If triggered from message handler (after edit)
-        await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.MARKDOWN)
+        if not post:
+            text = "❌ Post not found."
+            if update.callback_query:
+                await update.callback_query.edit_message_text(text)
+            else:
+                await update.message.reply_text(text)
+            return
+            
+        # Escape details
+        ptype = html.escape(str(post.get('type', 'link')))
+        status = html.escape(str(post.get('status')))
+        category = html.escape(str(post.get('category')))
+        views = str(post.get('views'))
+        link = html.escape(str(post.get('link', 'N/A')))
+        file_name = html.escape(str(post.get('file_name', 'N/A')))
+        
+        text = (
+            f"📄 <b>Post Details #{post_id}</b>\n\n"
+            f"<b>Type</b>: {ptype}\n"
+            f"<b>Status</b>: {status}\n"
+            f"<b>Category</b>: {category}\n"
+            f"<b>Views</b>: {views}\n"
+            f"<b>Link</b>: {link}\n"
+            f"<b>File</b>: {file_name}\n"
+        )
+        
+        if post.get('password'):
+            text += f"<b>Password</b>: <code>{html.escape(str(post.get('password')))}</code>\n"
+            
+        timer = post.get('auto_delete_timer', 'Default')
+        caption = html.escape(str(post.get('caption', '')))
+        
+        text += (
+            f"<b>Timer</b>: {timer} mins\n\n"
+            f"<b>Caption</b>:\n<i>{caption}</i>"
+        )
+        
+        kb = [
+            [InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_{post_id}")],
+            [InlineKeyboardButton("✏ Edit", callback_data=f"editopt_{post_id}"), InlineKeyboardButton("🧬 Clone", callback_data=f"clone_{post_id}")],
+            [InlineKeyboardButton("🔴 Disable" if post.get("status") == "active" else "🟢 Enable", callback_data=f"toggle_{post_id}"), InlineKeyboardButton("🗑 Delete", callback_data=f"delete_{post_id}")],
+            [InlineKeyboardButton("🔙 Back to List", callback_data="list_All_0")]
+        ]
+        
+        # Add Preview Button
+        kb.insert(1, [InlineKeyboardButton("👁 Preview Content", callback_data=f"preview_{post_id}")])
+        
+        markup = InlineKeyboardMarkup(kb)
+        
+        if update.callback_query:
+            await update.callback_query.edit_message_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+        else:
+            # If triggered from message handler (after edit)
+            await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+            
+    except Exception as e:
+        print(f"Error rendering post detail: {e}")
+        # fallback
+        err_text = f"❌ Error rendering post: {e}"
+        if update.callback_query:
+            await update.callback_query.edit_message_text(err_text)
+        else:
+            await update.message.reply_text(err_text)
 
 # --- EDIT POST CONVERSATION ---
 
