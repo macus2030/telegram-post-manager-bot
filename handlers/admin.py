@@ -659,7 +659,11 @@ async def select_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Join with double space as requested: "Comedy  Action"
         final_cat_str = "  ".join(selected)
         context.user_data['category'] = final_cat_str
-        return await show_final_confirmation(update, context)
+        try:
+            return await show_final_confirmation(update, context)
+        except Exception as e:
+             await update.message.reply_text(f"❌ Error proceeding: {e}")
+             return SELECT_CATEGORY
 
     if update.message.text == "❌ Clear":
         context.user_data['selected_categories'] = []
@@ -741,32 +745,46 @@ async def show_category_selection_ui(update: Update, context: ContextTypes.DEFAU
     return SELECT_CATEGORY
 
 async def show_final_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    data = context.user_data
-    
-    # Timer Display
-    # Timer Display
-    timer_val = data.get('auto_delete_timer')
-    global_timer = get_auto_delete_timer()
-    timer_str = f"{timer_val} mins" if timer_val else f"Default ({int(global_timer/60)} mins)"
-    
-    preview_text = (
-        "📋 *Confirm Post Creation*\n\n"
-        f"**Type**: {data.get('type')}\n"
-        f"**Category**: {data.get('category')}\n"
-        f"**File**: {data.get('file_name', 'N/A')}\n"
-        f"**Link**: {data.get('link', 'N/A')}\n"
-        f"**Timer**: {timer_str}\n\n"
-        "**Caption/Content**:\n"
-        f"_{data.get('caption')}_"
-    )
-    
-    kb = [["✅ Create Post", "Draft Mode"], ["⏱️ Set Timer", "✏️ Edit Again"], ["❌ Cancel"]]
-    await update.message.reply_text(
-        preview_text,
-        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
-        parse_mode=ParseMode.MARKDOWN
-    )
-    return CONFIRM
+    try:
+        data = context.user_data
+        
+        # Timer Display
+        timer_val = data.get('auto_delete_timer')
+        global_timer = get_auto_delete_timer()
+        timer_str = f"{timer_val} mins" if timer_val else f"Default ({int(global_timer/60)} mins)"
+        
+        # Escape content for HTML safety
+        ptype = html.escape(str(data.get('type', 'N/A')))
+        category = html.escape(str(data.get('category', 'N/A')))
+        file_name = html.escape(str(data.get('file_name', 'N/A')))
+        link = html.escape(str(data.get('link', 'N/A')))
+        caption = html.escape(str(data.get('caption', '')))
+        
+        preview_text = (
+            "📋 <b>Confirm Post Creation</b>\n\n"
+            f"<b>Type</b>: {ptype}\n"
+            f"<b>Category</b>: {category}\n"
+            f"<b>File</b>: {file_name}\n"
+            f"<b>Link</b>: {link}\n"
+            f"<b>Timer</b>: {timer_str}\n\n"
+            "<b>Caption/Content</b>:\n"
+            f"<i>{caption}</i>"
+        )
+        
+        kb = [["✅ Create Post", "Draft Mode"], ["⏱️ Set Timer", "✏️ Edit Again"], ["❌ Cancel"]]
+        await update.message.reply_text(
+            preview_text,
+            reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
+            parse_mode=ParseMode.HTML
+        )
+        return CONFIRM
+    except Exception as e:
+        print(f"Error in show_final_confirmation: {e}")
+        await update.message.reply_text(
+            f"⚠ Error rendering confirmation: {e}\n\nPlease try again or click Cancel.",
+            reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True)
+        )
+        return CONFIRM
 
 async def final_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     choice = update.message.text
