@@ -24,19 +24,23 @@ INITIAL_MSG_TEMPLATE = """LN Post : {post_id}
 
 {caption}
 
-📂 Category: {category}
-⏳ This message will auto-delete in {time} mins.
-
-Download/Watch Link👇🏻 
+Download / Watch Link 👇🏻 
 {link}
 
 How to Open 
 {how_to_open_link}"""
 
 INITIAL_MAIN_TEMPLATE = """📢 <b>Main Channel Post</b>
+
 {news}
+
+ISKO IGNORE KARO, VIDEOS KI LINK NICHE HAI..😉
+.
+.
 .
 Post - <b>LN{post_id}</b>
+
+👉 <a href="{short_link}">CLICK HERE TO OPEN POST</a>
 👉 <a href="{short_link}">CLICK HERE TO OPEN POST</a>
 
 How to Use Telegram Bot?
