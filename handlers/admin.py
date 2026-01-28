@@ -541,21 +541,25 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data['file_type'] = 'document'
         context.user_data['file_name'] = f.file_name
         context.user_data['file_id'] = f.file_id
+        context.user_data['file_unique_id'] = f.file_unique_id
     elif msg.video:
         f = msg.video
         context.user_data['file_type'] = 'video'
         context.user_data['file_name'] = f.file_name or "video.mp4"
         context.user_data['file_id'] = f.file_id
+        context.user_data['file_unique_id'] = f.file_unique_id
     elif msg.photo:
         f = msg.photo[-1] # Best quality
         context.user_data['file_type'] = 'photo'
         context.user_data['file_name'] = "photo.jpg"
         context.user_data['file_id'] = f.file_id
+        context.user_data['file_unique_id'] = f.file_unique_id
     elif msg.audio:
         f = msg.audio
         context.user_data['file_type'] = 'audio'
         context.user_data['file_name'] = f.file_name or "audio.mp3"
         context.user_data['file_id'] = f.file_id
+        context.user_data['file_unique_id'] = f.file_unique_id
     else:
         await update.message.reply_text("⚠ Unsupported file type. Please upload a Document, Video, Photo, or Audio.")
         return UPLOAD_FILE
@@ -814,6 +818,7 @@ async def final_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     post_id = add_post({
         "type": data['type'],
         "file_id": data.get('file_id'),
+        "file_unique_id": data.get('file_unique_id'),
         "file_type": data.get('file_type'),
         "file_name": data.get('file_name'),
         "link": data.get('link'),

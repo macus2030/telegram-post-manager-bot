@@ -33,12 +33,11 @@ Download/Watch Link👇🏻
 How to Open 
 {how_to_open_link}"""
 
-INITIAL_MAIN_TEMPLATE = """{news}
-
-ISKO IGNORE KARO, VIDEOS KI LINK NICHE HAI..😉
+INITIAL_MAIN_TEMPLATE = """📢 <b>Main Channel Post</b>
+{news}
 .
-Post - LN{post_id}
-{short_link}
+Post - <b>LN{post_id}</b>
+👉 <a href="{short_link}">CLICK HERE TO OPEN POST</a>
 
 How to Use Telegram Bot?
 {how_to_open_link}"""
@@ -202,6 +201,25 @@ def add_post(post_data: Dict[str, Any]) -> str:
         conn = get_connection()
         c = conn.cursor()
         
+        # Deduplication Logic
+        unique_id = post_data.get("file_unique_id")
+        if unique_id:
+            # We must search strictly in the JSON data column
+            # Since SQLite doesn't have great JSON support in all versions, we iterate or use LIKE
+            # But iterating thousands of posts is slow.
+            # Faster approach: Add a dedicated column or index? 
+            # For now, let's use a query on 'data' column with LIKE. unique_id is long and unique.
+            # A simple LIKE '%"file_unique_id": "UNIQUE_ID"%' should work.
+            
+            # NOTE: JSON keys order is not guaranteed, but standard dumps usually keep it? 
+            # No, standard dumps don't guarantee. But file_unique_id string search is fairly safe.
+            search_pattern = f'%"{unique_id}"%'
+            c.execute("SELECT id FROM posts WHERE data LIKE ?", (search_pattern,))
+            existing = c.fetchone()
+            if existing:
+                conn.close()
+                return str(existing[0])
+
         # We let DB assign ID
         ptype = post_data.get("type", "link")
         status = post_data.get("status", "active")
