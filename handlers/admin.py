@@ -135,6 +135,52 @@ async def global_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Regex for all menu buttons
 MENU_REGEX = "^(🏠 Dashboard|📝 Post Manager|📂 Categories|⚙️ Settings|📊 Statistics|💾 Backup & Export|🧹 Clear Chat|❌ Cancel|➕ Create Post|📦 Bulk Create|📢 Main Channel Post|🔍 Search|⏳ Scheduled Posts|👥 Users|📢 Broadcast)$"
 
+async def migrate_passwords_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_admin(update.effective_user.id): return
+    
+    status_msg = await update.message.reply_text("⏳ **Starting Migration...**\nScanning posts for old passwords...")
+    
+    from storage import get_all_posts, update_post
+    import re
+    
+    all_posts = get_all_posts()
+    count = 0
+    updated_ids = []
+    
+    for post in all_posts:
+        caption = post.get("caption", "")
+        if not caption: continue
+        
+        # Regex to find "Password: xyz" (case insensitive)
+        match = re.search(r"(?i)Password\s*:\s*(.+)", caption)
+        
+        if match:
+            password = match.group(1).strip()
+            
+            # Update Post
+            # Remove the line containing "Password: ..."
+            new_caption = re.sub(r"(?i)^.*Password\s*:\s*.+$\n?", "", caption, flags=re.MULTILINE).strip()
+            
+            if not new_caption:
+                new_caption = "(Password Protected 🔐)"
+            elif "(Password Protected 🔐)" not in new_caption:
+                 new_caption += "\n(Password Protected 🔐)"
+            
+            update_post(post['id'], {
+                "password": password,
+                "caption": new_caption
+            })
+            
+            count += 1
+            updated_ids.append(post['id'])
+            
+    await status_msg.edit_text(
+        f"✅ **Migration Complete!**\n\n"
+        f"🔄 Processed: {len(all_posts)} posts\n"
+        f"🔧 Updated: {count} posts\n\n"
+        f"IDs: {', '.join(updated_ids[:20])}..."
+    )
+
 async def scheduled_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from storage import get_pending_scheduled_posts
     import datetime
