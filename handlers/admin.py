@@ -590,6 +590,7 @@ async def handle_password_input(update: Update, context: ContextTypes.DEFAULT_TY
     # Auto-generate caption (WITHOUT PASSWORD)
     caption = f"Post: {next_id}\n(Password Protected 🔐)"
     context.user_data['caption'] = caption
+    context.user_data['password'] = password
     
     await update.message.reply_text(f"✅ Password saved! Auto-Caption generated:\n`{caption}`", parse_mode=ParseMode.MARKDOWN)
     
@@ -825,6 +826,7 @@ async def final_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "caption": data['caption'],
         "category": data['category'],
         "status": status,
+        "password": data.get('password'),
         "auto_delete_timer": data.get('auto_delete_timer'), # Feature
         # Default empty fields
         "tags": [],
