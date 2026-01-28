@@ -138,9 +138,9 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     post_type = post.get("type", "link")
     if post_type == "file":
          # Remove Link Section
-         # We expect the template to have "Download / Watch Link... {link}"
-         # A regex replace is safest to cover variations if user edited it
-         template = re.sub(r"(?i)Download / Watch Link.*\{link\}.*(\n|$)", "", template, flags=re.DOTALL)
+         # Handle both {link} and {short_link} for backward compatibility
+         # Matches "Download / Watch Link" followed by link variables
+         template = re.sub(r"(?i)Download / Watch Link.*\{(short_)?link\}.*(\n|$)", "", template, flags=re.DOTALL)
          # Clean up double newlines potentially left behind
          template = re.sub(r"\n\s*\n\s*\n", "\n\n", template)
          
