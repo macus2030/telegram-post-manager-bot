@@ -26,13 +26,13 @@ INITIAL_MSG_TEMPLATE = """LN Post : {post_id}
 
 INITIAL_MSG_TEMPLATE = """LN Post : {post_id}
 
-Content : {caption}
+Content : {content_text}
 
-Download / Watch Link 👇🏻 
-{link}
-{link}
+Download / Watch Link 👇🏻
+{short_link}
+{short_link}
 
-How to Open 
+How to Open
 https://t.me/Hungama1/{channel_post_id}"""
 
 INITIAL_MAIN_TEMPLATE = """📢 <b>Main Channel Post</b>

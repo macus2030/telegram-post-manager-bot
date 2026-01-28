@@ -130,6 +130,10 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     variables["caption"] = processed_caption
     
+    # Add aliases for new template variable names (backward compatibility)
+    variables["content_text"] = processed_caption  # Alias for {content_text}
+    variables["short_link"] = html.escape(str(post_link))  # Alias for {short_link}
+    
     # 4. Modify Template for File Type (Step 3 Requirement)
     post_type = post.get("type", "link")
     if post_type == "file":
