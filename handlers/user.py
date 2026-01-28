@@ -130,6 +130,19 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     variables["caption"] = processed_caption
     
+    # 4. Modify Template for File Type (Step 3 Requirement)
+    post_type = post.get("type", "link")
+    if post_type == "file":
+         # Remove Link Section
+         # We expect the template to have "Download / Watch Link... {link}"
+         # A regex replace is safest to cover variations if user edited it
+         template = re.sub(r"(?i)Download / Watch Link.*\{link\}.*(\n|$)", "", template, flags=re.DOTALL)
+         # Clean up double newlines potentially left behind
+         template = re.sub(r"\n\s*\n\s*\n", "\n\n", template)
+         
+         # Add Prefix
+         template = "📦 File : RAR / ZIP\n\n" + template.strip()
+
     try:
         final_caption = template.format(**variables)
     except KeyError as e:
@@ -137,10 +150,10 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
          final_caption = post.get("caption", "")
 
-    # 4. Send Content
+    # 5. Send Content
     try:
         sent_msg = None
-        post_type = post.get("type", "link")
+        # post_type already defined above
         
         # Protection Logic
         is_protected = get_protect_content()
