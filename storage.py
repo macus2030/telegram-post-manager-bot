@@ -24,11 +24,16 @@ INITIAL_MSG_TEMPLATE = """LN Post : {post_id}
 
 {caption}
 
+INITIAL_MSG_TEMPLATE = """LN Post : {post_id}
+
+Content : {caption}
+
 Download / Watch Link 👇🏻 
+{link}
 {link}
 
 How to Open 
-{how_to_open_link}"""
+https://t.me/Hungama1/{channel_post_id}"""
 
 INITIAL_MAIN_TEMPLATE = """📢 <b>Main Channel Post</b>
 
@@ -38,7 +43,7 @@ ISKO IGNORE KARO, VIDEOS KI LINK NICHE HAI..😉
 .
 .
 .
-Post - <b>LN{post_id}</b>
+Post :- LN{post_id}
 
 👉 <a href="{short_link}">CLICK HERE TO OPEN POST</a>
 👉 <a href="{short_link}">CLICK HERE TO OPEN POST</a>

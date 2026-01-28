@@ -111,6 +111,7 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import html
     variables = {
         "post_id": post_id,
+        "channel_post_id": str(post.get("channel_message_id", "0")),
         "category": html.escape(str(post.get("category", "Uncategorized"))),
         "time": int(timer_seconds/60),
         "time_sec": timer_seconds,
