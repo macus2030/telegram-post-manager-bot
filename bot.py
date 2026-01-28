@@ -137,7 +137,7 @@ def main():
 
     # Register Handlers
     from handlers.admin import create_post_conv, admin_dashboard, clear_chat_history, main_channel_conv, scheduled_dashboard, sched_edit_conv, handle_schedule_callback
-    from handlers.user import start_user, handle_not_joined
+    from handlers.user import start_user, handle_not_joined, handle_password_callback
     from handlers.manager import post_manager, handle_manager_callback, edit_post_conv
     from handlers.stats import stats_dashboard
     from handlers.bulk import bulk_conv
@@ -164,6 +164,7 @@ def main():
 
     # Callbacks
     application.add_handler(CallbackQueryHandler(handle_not_joined, pattern="^check_sub_"))
+    application.add_handler(CallbackQueryHandler(handle_password_callback, pattern="^pass_"))
     application.add_handler(CallbackQueryHandler(handle_schedule_callback, pattern="^sched_"))
     application.add_handler(CallbackQueryHandler(handle_users_callback, pattern="^(users_|search_user|ban_|unban_|back_users)"))
     application.add_handler(CallbackQueryHandler(handle_bc_callback, pattern="^bc_"))

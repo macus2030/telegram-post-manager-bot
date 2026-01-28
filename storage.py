@@ -417,6 +417,28 @@ def update_auto_delete_timer(seconds: int):
         conn.commit()
         conn.close()
 
+def get_protect_content() -> bool:
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT value FROM config WHERE key = 'protect_content'")
+        row = c.fetchone()
+        conn.close()
+    
+    # Default is False (Off)
+    if row:
+        return row[0] == "1" or row[0].lower() == "true"
+    return False
+
+def update_protect_content(enabled: bool):
+    val = "1" if enabled else "0"
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ("protect_content", val))
+        conn.commit()
+        conn.close()
+
 
 # --- Categories ---
 

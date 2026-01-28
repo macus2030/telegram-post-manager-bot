@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
-from telegram.constants import ParseMode
-from storage import get_post, update_post, is_banned, add_user
+from telegram.constants import ParseMode, ChatAction
+from storage import get_post, update_post, is_banned, add_user, get_protect_content
 
 from utils.helpers import send_temp_message, check_admin, check_membership, get_post_timer
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -139,21 +139,29 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sent_msg = None
         post_type = post.get("type", "link")
         
+        # Protection Logic
+        is_protected = get_protect_content()
+        
+        # Button Logic (Password)
+        reply_markup = None
+        if post.get("password"):
+             reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔑 Password", callback_data=f"pass_{post_id}")]])
+        
         if post_type == "file":
              file_id = post.get("file_id")
              file_type = post.get("file_type", "document")
              
              if file_type == "document":
-                 sent_msg = await update.message.reply_document(document=file_id, caption=final_caption, parse_mode=ParseMode.HTML)
+                 sent_msg = await update.message.reply_document(document=file_id, caption=final_caption, parse_mode=ParseMode.HTML, protect_content=is_protected, reply_markup=reply_markup)
              elif file_type == "video":
-                 sent_msg = await update.message.reply_video(video=file_id, caption=final_caption, parse_mode=ParseMode.HTML)
+                 sent_msg = await update.message.reply_video(video=file_id, caption=final_caption, parse_mode=ParseMode.HTML, protect_content=is_protected, reply_markup=reply_markup)
              elif file_type == "photo":
-                 sent_msg = await update.message.reply_photo(photo=file_id, caption=final_caption, parse_mode=ParseMode.HTML)
+                 sent_msg = await update.message.reply_photo(photo=file_id, caption=final_caption, parse_mode=ParseMode.HTML, protect_content=is_protected, reply_markup=reply_markup)
              elif file_type == "audio":
-                 sent_msg = await update.message.reply_audio(audio=file_id, caption=final_caption, parse_mode=ParseMode.HTML)
+                 sent_msg = await update.message.reply_audio(audio=file_id, caption=final_caption, parse_mode=ParseMode.HTML, protect_content=is_protected, reply_markup=reply_markup)
                  
         else: # Link type
-            sent_msg = await update.message.reply_text(final_caption, parse_mode=ParseMode.HTML)
+            sent_msg = await update.message.reply_text(final_caption, parse_mode=ParseMode.HTML, protect_content=is_protected, reply_markup=reply_markup)
             
         # 5. Schedule Auto-Delete
         if sent_msg:
@@ -220,3 +228,27 @@ async def handle_not_joined(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.answer("❌ You haven't joined all channels!", show_alert=True)
         # We could update the buttons if the list changed (e.g. joined 1 of 2), but static list is fine for now.
+
+async def handle_password_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    post_id = query.data.split("_")[1]
+    
+    post = get_post(post_id)
+    if not post or not post.get("password"):
+        await query.answer("❌ No password found.", show_alert=True)
+        return
+        
+    password = post.get("password")
+    
+    # Send as hidden text (or alert?) user asked for "message password copyed" and "directly copy"
+    # Alert is best for "copy"? No, Telegram alerts don't copy to clipboard easily.
+    # Sending a message `code` allows tap to copy.
+    # User Request: "currunt password of file or link directly copu and messeg password copyed"
+    # Implementation: Send a ephemeral message with monospaced password.
+    
+    await query.answer("✅ Password Sent!", show_alert=False)
+    await query.message.reply_text(
+        f"🔑 Password:\n<code>{password}</code>", 
+        parse_mode=ParseMode.HTML
+    )
+

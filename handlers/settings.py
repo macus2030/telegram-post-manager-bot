@@ -1,7 +1,7 @@
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, MessageOriginChannel
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
-from storage import get_message_template, update_message_template, get_help_link, update_help_link, get_main_template, update_main_template, get_auto_delete_timer, update_auto_delete_timer
+from storage import get_message_template, update_message_template, get_help_link, update_help_link, get_main_template, update_main_template, get_auto_delete_timer, update_auto_delete_timer, get_protect_content, update_protect_content
 from utils.helpers import check_admin
 from config import HOW_TO_OPEN_LINK
 from handlers.admin import MENU_REGEX, global_fallback, cancel
@@ -25,7 +25,7 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     kb = [
         ["📝 Edit Message Template", "📢 Edit Main Channel Template"],
         ["🔗 Edit Help Link", "🔐 Manage Force Subscribe"],
-        ["⏱️ Edit Global Timer"],
+        ["⏱️ Edit Global Timer", "🔒 Toggle Content Protection"],
         ["🔙 Back to Dashboard"]
     ]
     
@@ -95,8 +95,25 @@ async def handle_setting_selection(update: Update, context: ContextTypes.DEFAULT
         )
         return EDIT_GLOBAL_TIMER
 
+    if text == "🔒 Toggle Content Protection":
+        return await toggle_content_protection(update, context)
+
     await update.message.reply_text("Invalid selection.")
     return SELECT_SETTING
+
+async def toggle_content_protection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    current = get_protect_content()
+    new_state = not current
+    update_protect_content(new_state)
+    
+    status = "✅ ON" if new_state else "❌ OFF"
+    await update.message.reply_text(
+        f"🔒 **Content Protection Updated**\n\n"
+        f"Status: **{status}**\n"
+        "When ON, users cannot forward or save files from the bot.",
+        parse_mode="Markdown"
+    )
+    return await show_settings_menu(update, context)
 
 async def manage_force_sub(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from storage import get_force_subs
@@ -296,6 +313,7 @@ settings_conv = ConversationHandler(
             MessageHandler(filters.Regex("^📢 Edit Main Channel Template$"), handle_setting_selection),
             MessageHandler(filters.Regex("^🔐 Manage Force Subscribe$"), handle_setting_selection),
             MessageHandler(filters.Regex("^⏱️ Edit Global Timer$"), handle_setting_selection),
+            MessageHandler(filters.Regex("^🔒 Toggle Content Protection$"), handle_setting_selection),
             MessageHandler(filters.Regex("^🔙 Back to Dashboard$"), handle_setting_selection)
         ],
         EDIT_MSG_TEMPLATE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_msg_template)],

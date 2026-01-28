@@ -583,8 +583,8 @@ async def handle_password_input(update: Update, context: ContextTypes.DEFAULT_TY
     # Calculate Next Post ID to show in caption
     next_id = get_latest_post_id() + 1
     
-    # Auto-generate caption
-    caption = f"Post: {next_id}\nPassword: {password}"
+    # Auto-generate caption (WITHOUT PASSWORD)
+    caption = f"Post: {next_id}\n(Password Protected 🔐)"
     context.user_data['caption'] = caption
     
     await update.message.reply_text(f"✅ Password saved! Auto-Caption generated:\n`{caption}`", parse_mode=ParseMode.MARKDOWN)
