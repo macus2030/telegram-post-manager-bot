@@ -1024,9 +1024,13 @@ async def mc_input_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(
         f"✅ Validated Post #{post_id}\n\n"
-        f"🔗 **Deep Link**:\n`{deep_link}`\n\n"
-        "Please send the **Shortened Link** (or any link) you want to use.\n"
-        "Click 'Skip' to use the raw deep link.",
+        f"🔗 **Bot Deep Link**:\n`{deep_link}`\n\n"
+        "👇 **Action Required** 👇\n"
+        "1. Copy the **Deep Link** above.\n"
+        "2. Shorten it using your URL Shortener.\n"
+        "3. Send the **Shortened Version** here.\n\n"
+        "⚠️ **Do NOT send the file/content link here.**\n"
+        "This link must open the bot!",
         reply_markup=ReplyKeyboardMarkup([["⏭️ Skip"], ["❌ Cancel", "🏠 Dashboard"]], resize_keyboard=True),
         parse_mode=ParseMode.MARKDOWN
     )
