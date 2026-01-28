@@ -31,7 +31,9 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
              return
              
         # Normal User /start without args
-        await update.message.reply_text("👋 Welcome! Use a valid link to access content.")
+        # Normal User /start without args
+        from storage import get_welcome_message
+        await update.message.reply_text(get_welcome_message())
         return
 
     raw_arg = args[0]

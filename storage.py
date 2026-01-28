@@ -448,6 +448,23 @@ def get_protect_content() -> bool:
         return row[0] == "1" or row[0].lower() == "true"
     return False
 
+def get_welcome_message() -> str:
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT value FROM config WHERE key = 'welcome_message'")
+        row = c.fetchone()
+        conn.close()
+    return row[0] if row else "👋 Welcome! Use a valid link to access content."
+
+def update_welcome_message(text: str):
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ("welcome_message", text))
+        conn.commit()
+        conn.close()
+
 def update_protect_content(enabled: bool):
     val = "1" if enabled else "0"
     with lock:

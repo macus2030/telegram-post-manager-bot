@@ -1,14 +1,14 @@
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, MessageOriginChannel
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
-from storage import get_message_template, update_message_template, get_help_link, update_help_link, get_main_template, update_main_template, get_auto_delete_timer, update_auto_delete_timer, get_protect_content, update_protect_content
+from storage import get_message_template, update_message_template, get_help_link, update_help_link, get_main_template, update_main_template, get_auto_delete_timer, update_auto_delete_timer, get_protect_content, update_protect_content, get_welcome_message, update_welcome_message
 from utils.helpers import check_admin
 from config import HOW_TO_OPEN_LINK
 from handlers.admin import MENU_REGEX, global_fallback, cancel
 import logging
 
 # States
-SELECT_SETTING, EDIT_MSG_TEMPLATE, EDIT_HELP_LINK, EDIT_MAIN_TEMPLATE, MANAGE_FORCE_SUB, ADD_FS_CHANNEL, EDIT_GLOBAL_TIMER = range(7)
+SELECT_SETTING, EDIT_MSG_TEMPLATE, EDIT_HELP_LINK, EDIT_MAIN_TEMPLATE, MANAGE_FORCE_SUB, ADD_FS_CHANNEL, EDIT_GLOBAL_TIMER, EDIT_WELCOME_MSG = range(8)
 
 async def settings_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entry point for Settings."""
@@ -26,6 +26,7 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         ["📝 Edit Message Template", "📢 Edit Main Channel Template"],
         ["🔗 Edit Help Link", "🔐 Manage Force Subscribe"],
         ["⏱️ Edit Global Timer", "🔒 Toggle Content Protection"],
+        ["👋 Edit Welcome Message"],
         ["🔙 Back to Dashboard"]
     ]
     
@@ -98,8 +99,29 @@ async def handle_setting_selection(update: Update, context: ContextTypes.DEFAULT
     if text == "🔒 Toggle Content Protection":
         return await toggle_content_protection(update, context)
 
+    if text == "👋 Edit Welcome Message":
+        current = get_welcome_message()
+        await update.message.reply_text(
+            "👋 *Edit Welcome Message*\n\n"
+            "This is the message users see when they start the bot without a link.\n\n"
+            f"**Current**:\n`{current}`\n\n"
+            "Send the new message:",
+            reply_markup=ReplyKeyboardMarkup([["❌ Cancel", "🏠 Dashboard"]], resize_keyboard=True),
+            parse_mode="Markdown"
+        )
+        return EDIT_WELCOME_MSG
+
     await update.message.reply_text("Invalid selection.")
     return SELECT_SETTING
+
+async def save_welcome_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text == "❌ Cancel":
+        return await show_settings_menu(update, context)
+        
+    update_welcome_message(text)
+    await update.message.reply_text("✅ Welcome Message updated!", parse_mode="Markdown")
+    return await show_settings_menu(update, context)
 
 async def toggle_content_protection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current = get_protect_content()
@@ -314,10 +336,12 @@ settings_conv = ConversationHandler(
             MessageHandler(filters.Regex("^🔐 Manage Force Subscribe$"), handle_setting_selection),
             MessageHandler(filters.Regex("^⏱️ Edit Global Timer$"), handle_setting_selection),
             MessageHandler(filters.Regex("^🔒 Toggle Content Protection$"), handle_setting_selection),
+            MessageHandler(filters.Regex("^👋 Edit Welcome Message$"), handle_setting_selection),
             MessageHandler(filters.Regex("^🔙 Back to Dashboard$"), handle_setting_selection)
         ],
         EDIT_MSG_TEMPLATE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_msg_template)],
         EDIT_HELP_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_help_link)],
+        EDIT_WELCOME_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_welcome_message)],
         EDIT_MAIN_TEMPLATE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_main_template)],
         
         MANAGE_FORCE_SUB: [
