@@ -215,15 +215,23 @@ async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     context.user_data['edit_field'] = field
     
+    # Get current value for display
+    pid = context.user_data.get('edit_pid')
+    post = get_post(pid)
+    current_val = post.get(field, "N/A")
+    import html
+    
     # Specific prompt based on field
     prompt = "Enter the new value:"
     if field == "caption":
-        prompt = "📝 Send the new *Caption* for this post:"
+        prompt = (
+            f"📝 **Edit Caption**\n\n"
+            f"**Current**:\n`{current_val}`\n\n"
+            "Send the new *Caption* for this post:"
+        )
     elif field == "category":
         # Multi-Select Logic for Edit
         # Parse current categories
-        pid = context.user_data.get('edit_pid')
-        post = get_post(pid)
         current_cats_str = post.get('category', 'Uncategorized')
         
         # Split by likely separators (double space, pipe, comma)
@@ -237,13 +245,26 @@ async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await show_edit_category_selector(update, context)
         
     elif field == "link":
-        prompt = "🔗 Send the new *Link* URL:"
+        prompt = (
+            f"🔗 **Edit Link**\n\n"
+            f"**Current**: {current_val}\n\n"
+            "Send the new *Link* URL:"
+        )
     elif field == "auto_delete_timer":
-        prompt = "⏱️ Send new **Auto-Delete Timer** in minutes (e.g. `10`, `60`).\nSend `0` to use Global Default."
+        prompt = (
+            f"⏱️ **Edit Timer**\n\n"
+            f"**Current**: {current_val} mins\n\n"
+            "Send new **Auto-Delete Timer** in minutes (e.g. `10`, `60`).\n"
+            "Send `0` to use Global Default."
+        )
     elif field == "file":
         prompt = "📂 Send the **New File** (Document, Video, or Audio) to replace the existing one:"
     elif field == "password":
-        prompt = "🔑 Send the **New Password** for this file post:"
+        prompt = (
+             f"🔑 **Edit Password**\n\n"
+             f"**Current**: `{current_val}`\n\n"
+             "Send the **New Password** for this file post:"
+        )
         
     kb = [[InlineKeyboardButton("🔙 Cancel", callback_data="cancel_edit")]]
     

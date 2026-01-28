@@ -173,6 +173,7 @@ def main():
     
     # Commands
     application.add_handler(CommandHandler("start", start_user))
+    application.add_handler(CommandHandler("migrate_passwords", migrate_passwords_command))
     
     # Admin Menu Buttons
     application.add_handler(MessageHandler(filters.Regex("^🏠 Dashboard$"), admin_dashboard))
