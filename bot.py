@@ -136,7 +136,7 @@ def main():
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).persistence(persistence).post_init(post_init).build()
 
     # Register Handlers
-    from handlers.admin import create_post_conv, admin_dashboard, clear_chat_history, main_channel_conv, scheduled_dashboard, sched_edit_conv, handle_schedule_callback
+    from handlers.admin import create_post_conv, admin_dashboard, clear_chat_history, main_channel_conv, scheduled_dashboard, sched_edit_conv, handle_schedule_callback, migrate_passwords_command
     from handlers.user import start_user, handle_not_joined, handle_password_callback
     from handlers.manager import post_manager, handle_manager_callback, edit_post_conv
     from handlers.stats import stats_dashboard

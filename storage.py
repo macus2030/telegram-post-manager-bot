@@ -283,6 +283,23 @@ def delete_post(post_id: str, soft_delete: bool = True):
 def restore_post(post_id: str):
     update_post(post_id, {"status": "active"})
 
+def get_all_posts() -> List[Dict[str, Any]]:
+    """Returns a list of all posts (parsed JSON)."""
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT data FROM posts")
+        rows = c.fetchall()
+        conn.close()
+    
+    posts = []
+    for row in rows:
+        try:
+            posts.append(json.loads(row['data']))
+        except:
+            pass
+    return posts
+
 def clone_post(post_id: str) -> Optional[str]:
     post = get_post(post_id)
     if not post: return None
