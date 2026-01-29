@@ -135,6 +135,14 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Pre-format caption to replace internal variables like {link}
     raw_caption = post.get("caption", "")
+    
+    # CLEANUP: Remove legacy text burned into caption (Dynamic Fix)
+    # Remove "Post: 123" line
+    raw_caption = re.sub(r"(?i)^Post\s*:\s*\d+\s*\n?", "", raw_caption, flags=re.MULTILINE)
+    # Remove "(Password Protected 🔐)" line
+    raw_caption = re.sub(r"(?i)^\(Password Protected 🔐\)\s*\n?", "", raw_caption, flags=re.MULTILINE)
+    raw_caption = raw_caption.strip()
+
     try:
         # We assume caption might use same variables except 'caption'
         processed_caption = raw_caption.format(**variables)
@@ -185,7 +193,7 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
              template = re.sub(r"\n\s*\n\s*\n", "\n\n", template)
              
              # Add Prefix
-             template = "📦 File : RAR / ZIP\n\n" + template.strip()
+             template = "\n\n" + template.strip()
 
     try:
         final_caption = template.format(**variables)
