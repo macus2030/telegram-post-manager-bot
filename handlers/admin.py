@@ -1257,7 +1257,8 @@ async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update_post(post_id, {
                 "posted_to_channel": True,
                 "posted_at": int(time.time()),
-                "channel_message_id": msg.message_id
+                "channel_message_id": msg.message_id,
+                "main_channel_short_link": data.get('mc_short_link')
             })
             await update.message.reply_text(f"✅ Posted Successfully! (Msg ID: {msg.message_id})")
             await admin_dashboard(update, context)
@@ -1297,8 +1298,12 @@ async def execute_scheduled_post(context: ContextTypes.DEFAULT_TYPE, post_id: st
             parse_mode=ParseMode.HTML
         )
         
+        # Get existing post to preserve main_channel_short_link
+        from storage import get_post
+        post = get_post(post_id)
+        
         # Update DB
-        update_post(post_id, {
+        update_data = {
             "posted_to_channel": True,
             "posted_at": int(time.time()),
             "channel_message_id": msg.message_id,
@@ -1306,7 +1311,13 @@ async def execute_scheduled_post(context: ContextTypes.DEFAULT_TYPE, post_id: st
             "scheduled_for": None,
             "status": "active",
             "retry_count": 0
-        })
+        }
+        
+        # Preserve main_channel_short_link if it exists
+        if post and post.get("main_channel_short_link"):
+            update_data["main_channel_short_link"] = post.get("main_channel_short_link")
+            
+        update_post(post_id, update_data)
         print(f"Scheduled Post #{post_id} sent successfully.")
         return True
         
@@ -1573,6 +1584,7 @@ async def mc_schedule_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
                     "scheduled_for": int(schedule_time_ts),
                     "channel_preview_text": preview_text,
                     "target_chat_id": target_chat_id,
+                    "main_channel_short_link": data.get('mc_short_link'),
                     "status": "pending",
                     "retry_count": 0
                 })

@@ -98,7 +98,13 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import re
 
     template = get_message_template()
-    post_link = post.get("link", "")
+    
+    # Check if post was shared via Main Channel Post feature
+    # If so, use the shortened link from that flow instead of the original link
+    if post.get("main_channel_short_link"):
+        post_link = post.get("main_channel_short_link", "")
+    else:
+        post_link = post.get("link", "")
     
     # Check if link is missing or empty
     if not post_link: 
@@ -134,18 +140,41 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     variables["content_text"] = processed_caption  # Alias for {content_text}
     variables["short_link"] = html.escape(str(post_link))  # Alias for {short_link}
     
-    # 4. Modify Template for File Type (Step 3 Requirement)
+    # 4. Check if Main Channel Short Link exists (CRITICAL LOGIC)
+    # CASE 1: If shortened link exists → Send TEXT ONLY (no file attachment)
+    # CASE 2: If no shortened link → Send actual file/content
+    
+    has_main_channel_link = bool(post.get("main_channel_short_link"))
     post_type = post.get("type", "link")
-    if post_type == "file":
-         # Remove Link Section
-         # Handle both {link} and {short_link} for backward compatibility
-         # Matches "Download / Watch Link" followed by link variables
-         template = re.sub(r"(?i)Download / Watch Link.*\{(short_)?link\}.*(\n|$)", "", template, flags=re.DOTALL)
-         # Clean up double newlines potentially left behind
-         template = re.sub(r"\n\s*\n\s*\n", "\n\n", template)
-         
-         # Add Prefix
-         template = "📦 File : RAR / ZIP\n\n" + template.strip()
+    
+    # Prepare template based on case
+    if has_main_channel_link:
+        # CASE 1: Main Channel Short Link exists
+        # Always send as text message, never attach file
+        # This allows for monetization and copyright protection
+        force_text_only = True
+        
+        # Use the standard template with links
+        # DON'T remove link section
+        # DON'T add file prefix
+        pass  # Keep template as is
+        
+    else:
+        # CASE 2: No Main Channel Short Link
+        # Send actual file/content as normal
+        force_text_only = False
+        
+        # Modify Template for File Type (Step 3 Requirement)
+        if post_type == "file":
+             # Remove Link Section
+             # Handle both {link} and {short_link} for backward compatibility
+             # Matches "Download / Watch Link" followed by link variables
+             template = re.sub(r"(?i)Download / Watch Link.*\{(short_)?link\}.*(\n|$)", "", template, flags=re.DOTALL)
+             # Clean up double newlines potentially left behind
+             template = re.sub(r"\n\s*\n\s*\n", "\n\n", template)
+             
+             # Add Prefix
+             template = "📦 File : RAR / ZIP\n\n" + template.strip()
 
     try:
         final_caption = template.format(**variables)
@@ -157,17 +186,27 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 5. Send Content
     try:
         sent_msg = None
-        # post_type already defined above
         
         # Protection Logic
         is_protected = get_protect_content()
         
-        # Button Logic (Password)
-        reply_markup = None
-        if post.get("password"):
-             reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔑 Password", callback_data=f"pass_{post_id}")]])
+        # Button Logic (Password) - ALWAYS SHOW BY DEFAULT
+        # Password button is shown for ALL posts (required by default)
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔑 Password", callback_data=f"pass_{post_id}")]])
         
-        if post_type == "file":
+        # CASE 1: Main Channel Short Link exists → TEXT ONLY
+        if has_main_channel_link:
+            # Send ONLY text message (no file attachment)
+            # This is the monetization/copyright protection case
+            sent_msg = await update.message.reply_text(
+                final_caption, 
+                parse_mode=ParseMode.HTML, 
+                protect_content=is_protected, 
+                reply_markup=reply_markup
+            )
+            
+        # CASE 2: No Main Channel Short Link → Send actual file/content
+        elif post_type == "file":
              file_id = post.get("file_id")
              file_type = post.get("file_type", "document")
              
@@ -180,10 +219,10 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
              elif file_type == "audio":
                  sent_msg = await update.message.reply_audio(audio=file_id, caption=final_caption, parse_mode=ParseMode.HTML, protect_content=is_protected, reply_markup=reply_markup)
                  
-        else: # Link type
+        else: # Link type (no main channel short link)
             sent_msg = await update.message.reply_text(final_caption, parse_mode=ParseMode.HTML, protect_content=is_protected, reply_markup=reply_markup)
             
-        # 5. Schedule Auto-Delete
+        # 6. Schedule Auto-Delete
         if sent_msg:
              context.job_queue.run_once(auto_delete_job, timer_seconds, chat_id=update.effective_chat.id, data={'msg_id': sent_msg.message_id, 'timer': timer_seconds})
             
@@ -254,12 +293,22 @@ async def handle_password_callback(update: Update, context: ContextTypes.DEFAULT
     post_id = query.data.split("_")[1]
     
     post = get_post(post_id)
-    if not post or not post.get("password"):
-        await query.answer("❌ No password found.", show_alert=True)
+    if not post:
+        await query.answer("❌ Post not found.", show_alert=True)
+        return
+    
+    # Get password (may be empty/None)
+    password = post.get("password", "")
+    
+    # If no password is set, show default message
+    if not password:
+        await query.answer("✅ Password Info", show_alert=False)
+        await query.message.reply_text(
+            "🔑 <b>Password:</b>\n<code>No password required for this post</code>", 
+            parse_mode=ParseMode.HTML
+        )
         return
         
-    password = post.get("password")
-    
     # Send as hidden text (or alert?) user asked for "message password copyed" and "directly copy"
     # Alert is best for "copy"? No, Telegram alerts don't copy to clipboard easily.
     # Sending a message `code` allows tap to copy.
