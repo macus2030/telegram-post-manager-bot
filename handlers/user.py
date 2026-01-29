@@ -137,11 +137,14 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_caption = post.get("caption", "")
     
     # CLEANUP: Remove legacy text burned into caption (Dynamic Fix)
-    # Remove "Post: 123" line
-    raw_caption = re.sub(r"(?i)^Post\s*:\s*\d+\s*\n?", "", raw_caption, flags=re.MULTILINE)
-    # Remove "(Password Protected 🔐)" line
-    raw_caption = re.sub(r"(?i)^\(Password Protected 🔐\)\s*\n?", "", raw_caption, flags=re.MULTILINE)
-    raw_caption = raw_caption.strip()
+    try:
+        # Remove "Post: 123" line
+        raw_caption = re.sub(r"(?i)^Post\s*:\s*\d+\s*\n?", "", raw_caption, flags=re.MULTILINE)
+        # Remove "(Password Protected 🔐)" line
+        raw_caption = re.sub(r"(?i)^\(Password Protected 🔐\)\s*\n?", "", raw_caption, flags=re.MULTILINE)
+        raw_caption = raw_caption.strip()
+    except Exception as e:
+        print(f"Error cleaning caption: {e}")
 
     try:
         # We assume caption might use same variables except 'caption'
