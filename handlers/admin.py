@@ -65,11 +65,6 @@ async def global_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await post_manager(update, context)
         return ConversationHandler.END
 
-    elif text == "📢 Main Channel Post":
-        # End current conversation so the next click works
-        await update.message.reply_text("🔄 Switching modes... Please click **Main Channel Post** again.", parse_mode="Markdown")
-        return ConversationHandler.END
-
     elif text == "⏳ Scheduled Posts":
          await scheduled_dashboard(update, context)
          return ConversationHandler.END
@@ -1037,7 +1032,6 @@ async def start_main_channel_post(update: Update, context: ContextTypes.DEFAULT_
     context.user_data.clear()
     
     # Suggest latest ID
-    # Suggest latest ID
     suggested = get_latest_post_id()
     
     await update.message.reply_text(
@@ -1062,7 +1056,6 @@ async def mc_input_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     context.user_data['mc_post_id'] = post_id
     
-    # Generate Deep Link
     # Generate Deep Link
     bot_username = context.bot.username
     from utils.helpers import encode_payload
@@ -1156,6 +1149,7 @@ async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
         variables = {
             "post_id": data.get('mc_post_id', 'N/A'),
             "short_link": data.get('mc_short_link', 'N/A'),
+            "bot_deep_link": data.get('mc_deep_link', 'N/A'),
             "news": data.get('mc_news', 'N/A'),
             "how_to_open_link": hl
         }

@@ -40,8 +40,8 @@ ISKO IGNORE KARO, VIDEOS KI LINK NICHE HAI..😉
 .
 Post :- LN{post_id}
 
-👉 <a href="{short_link}">CLICK HERE TO OPEN POST</a>
-👉 <a href="{short_link}">CLICK HERE TO OPEN POST</a>
+👉 <a href="{bot_deep_link}">CLICK HERE TO OPEN POST</a>
+👉 <a href="{bot_deep_link}">CLICK HERE TO OPEN POST</a>
 
 How to Use Telegram Bot?
 {how_to_open_link}"""
