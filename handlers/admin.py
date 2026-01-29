@@ -1025,34 +1025,55 @@ async def mc_input_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "❌ Cancel": return await cancel(update, context)
     
     post_id = text.strip()
-    post = get_post(post_id)
     
-    if not post:
-        await update.message.reply_text("❌ Post not found. Please try again.")
-        return MC_INPUT_ID
+    try:
+        post = get_post(post_id)
         
-    context.user_data['mc_post_id'] = post_id
-    
-    # Generate Deep Link
-    bot_username = context.bot.username
-    from utils.helpers import encode_payload
-    encoded_id = encode_payload(post_id)
-    deep_link = f"https://t.me/{bot_username}?start={encoded_id}"
-    context.user_data['mc_deep_link'] = deep_link
-    
-    await update.message.reply_text(
-        f"✅ Validated Post #{post_id}\n\n"
-        f"🔗 **Bot Deep Link**:\n`{deep_link}`\n\n"
-        "👇 **Action Required** 👇\n"
-        "1. Copy the **Deep Link** above.\n"
-        "2. Shorten it using your URL Shortener.\n"
-        "3. Send the **Shortened Version** here.\n\n"
-        "⚠️ **Do NOT send the file/content link here.**\n"
-        "This link must open the bot!",
-        reply_markup=ReplyKeyboardMarkup([["⏭️ Skip"], ["❌ Cancel", "🏠 Dashboard"]], resize_keyboard=True),
-        parse_mode=ParseMode.MARKDOWN
-    )
-    return MC_INPUT_LINK
+        if not post:
+            await update.message.reply_text("❌ Post not found. Please try again.")
+            return MC_INPUT_ID
+            
+        context.user_data['mc_post_id'] = post_id
+        
+        # Generate Deep Link
+        try:
+            bot_username = context.bot.username
+            if not bot_username:
+                # Fallback: get bot info
+                bot_info = await context.bot.get_me()
+                bot_username = bot_info.username
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error getting bot username: {e}\n\nPlease try again.")
+            return MC_INPUT_ID
+            
+        from utils.helpers import encode_payload
+        encoded_id = encode_payload(post_id)
+        deep_link = f"https://t.me/{bot_username}?start={encoded_id}"
+        context.user_data['mc_deep_link'] = deep_link
+        
+        await update.message.reply_text(
+            f"✅ Validated Post #{post_id}\n\n"
+            f"🔗 **Bot Deep Link**:\n`{deep_link}`\n\n"
+            "👇 **Action Required** 👇\n"
+            "1. Copy the **Deep Link** above.\n"
+            "2. Shorten it using your URL Shortener.\n"
+            "3. Send the **Shortened Version** here.\n\n"
+            "⚠️ **Do NOT send the file/content link here.**\n"
+            "This link must open the bot!",
+            reply_markup=ReplyKeyboardMarkup([["⏭️ Skip"], ["❌ Cancel", "🏠 Dashboard"]], resize_keyboard=True),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return MC_INPUT_LINK
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        await update.message.reply_text(
+            f"❌ Error processing post ID: {e}\n\n"
+            "Please try again or contact admin.",
+            reply_markup=ReplyKeyboardMarkup([["❌ Cancel", "🏠 Dashboard"]], resize_keyboard=True)
+        )
+        return MC_INPUT_ID
 
 async def mc_input_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
