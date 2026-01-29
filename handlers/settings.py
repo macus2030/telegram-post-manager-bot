@@ -51,6 +51,13 @@ async def handle_setting_selection(update: Update, context: ContextTypes.DEFAULT
             "📝 *Edit Message Template*\n\n"
             "Current Template:\n"
             f"```\n{current_template}\n```\n\n"
+            "**Available Variables:**\n"
+            "• `{post_id}` : Post Number\n"
+            "• `{caption}` : Post Caption\n"
+            "• `{link}` : Original Link\n"
+            "• `{short_link}` : Shortened Link\n"
+            "• `{how_to_open_link}` : Help Link\n"
+            "• `{time}` : Auto-Delete Time (mins)\n\n"
             "Send the new template structure now:",
             reply_markup=ReplyKeyboardMarkup([["❌ Cancel", "🏠 Dashboard"]], resize_keyboard=True),
             parse_mode="Markdown"
