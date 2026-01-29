@@ -194,23 +194,21 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Protection Logic
         is_protected = get_protect_content()
         
-        # Button Logic (Password) - ALWAYS SHOW BY DEFAULT
-        # Password button is shown for ALL posts (required by default)
-        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔑 Password", callback_data=f"pass_{post_id}")]])
-        
-        # CASE 1: Main Channel Short Link exists → TEXT ONLY
+        # CASE 1: Main Channel Short Link exists → TEXT ONLY (NO PASSWORD BUTTON)
         if has_main_channel_link:
-            # Send ONLY text message (no file attachment)
+            # Send ONLY text message (no file attachment, no password button)
             # This is the monetization/copyright protection case
+            # Password button should only appear when user clicks shortened link
             sent_msg = await update.message.reply_text(
                 final_caption, 
                 parse_mode=ParseMode.HTML, 
-                protect_content=is_protected, 
-                reply_markup=reply_markup
+                protect_content=is_protected
             )
             
         # CASE 2: No Main Channel Short Link → Send actual file/content
         elif post_type == "file":
+             # Password button for file posts
+             reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔑 Password", callback_data=f"pass_{post_id}")]])
              file_id = post.get("file_id")
              file_type = post.get("file_type", "document")
              
@@ -224,6 +222,8 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
                  sent_msg = await update.message.reply_audio(audio=file_id, caption=final_caption, parse_mode=ParseMode.HTML, protect_content=is_protected, reply_markup=reply_markup)
                  
         else: # Link type (no main channel short link)
+            # Password button for link posts
+            reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔑 Password", callback_data=f"pass_{post_id}")]])
             sent_msg = await update.message.reply_text(final_caption, parse_mode=ParseMode.HTML, protect_content=is_protected, reply_markup=reply_markup)
             
         # 6. Schedule Auto-Delete
