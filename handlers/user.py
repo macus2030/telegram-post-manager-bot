@@ -186,8 +186,9 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Send actual file/content as normal
         force_text_only = False
         
-        # Modify Template for File Type (Step 3 Requirement)
-        if post_type == "file":
+    # Modify Template for File Type (Step 3 Requirement)
+    # Apply this WHENEVER we are sending the file (force_text_only is False)
+    if not force_text_only and post_type == "file":
              # Remove Link Section
              # Handle both {link} and {short_link} for backward compatibility
              # Matches "Download / Watch Link" followed by link variables
