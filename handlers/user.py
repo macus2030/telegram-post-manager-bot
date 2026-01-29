@@ -201,8 +201,8 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Protection Logic
         is_protected = get_protect_content()
         
-        # CASE 1: Main Channel Short Link exists → TEXT ONLY (NO PASSWORD BUTTON)
-        if has_main_channel_link:
+        # CASE 1: Main Channel Short Link exists AND Not Verified → TEXT ONLY (NO PASSWORD BUTTON)
+        if has_main_channel_link and not is_verified:
             # Send ONLY text message (no file attachment, no password button)
             # This is the monetization/copyright protection case
             # Password button should only appear when user clicks shortened link
