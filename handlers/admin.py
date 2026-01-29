@@ -915,29 +915,7 @@ async def final_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         preview_text = f"⚠ Preview Error: {e}"
 
-    success_msg = (
-        f"✅ *Post Created Successfully!* (#{post_id})\n\n"
-        f"🔗 *Copy Link*:\n`{deep_link}`\n\n"
-        f"⬇️ *User Preview* ⬇️\n"
-        f"------------------\n"
-        f"{preview_text}\n"
-        f"------------------"
-    )
-    
-    # Note: If preview is too long or has HTML tags, reply_text with markdown might fail if users put raw HTML tags in template. 
-    # But we are using ParseMode.MARKDOWN for success_msg. 
-    # If preview_text contains characters that break markdown (like unclosed * or _), it might error.
-    # Ideally we should send preview as separate message or just be careful. 
-    # For now, let's try to keep it simple. If template is HTML based but we send as Markdown, it might look wrong.
-    # Actually, user.py uses HTML parse mode. admin.py uses MARKDOWN. Mixing them is tricky in one message.
-    # Let's send the success message as HTML to match user.py's rendering style for the preview part? 
-    # Or just send preview as a second message with HTML parse mode.
-    
-    await update.message.reply_text(success_msg.replace("⬇️ *User Preview* ⬇️", "⬇️ User Preview (Raw) ⬇️"), parse_mode=None) 
-    # Sending without parse_mode to avoid errors with complex templates for now, 
-    # OR better: Send success msg (Markdown) first, then Preview (HTML) separately.
-    
-    # Re-doing the block to send separately for safety
+    # Send success message and preview
     await update.message.reply_text(
         f"✅ <b>Post Created Successfully!</b> (#{post_id})\n\n"
         f"🔗 <b>Copy Link</b>:\n<code>{deep_link}</code>",
@@ -949,7 +927,6 @@ async def final_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode=ParseMode.HTML
     )
     
-    # Return to dashboard
     # Return to dashboard
     await admin_dashboard(update, context)
     return ConversationHandler.END
