@@ -1585,7 +1585,7 @@ async def mc_schedule_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
                     "scheduled_for": int(schedule_time_ts),
                     "channel_preview_text": preview_text,
                     "target_chat_id": target_chat_id,
-                    "main_channel_short_link": data.get('mc_short_link'),
+                    "main_channel_short_link": context.user_data.get('mc_short_link'),
                     "status": "pending",
                     "retry_count": 0
                 })
