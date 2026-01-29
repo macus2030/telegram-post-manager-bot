@@ -13,11 +13,20 @@ from config import TELEGRAM_TOKEN
 
 # Dummy Server for Render Binding
 def start_dummy_server():
-    port = int(os.environ.get("PORT", 8080))
-    handler = SimpleHTTPRequestHandler
-    with TCPServer(("", port), handler) as httpd:
-        print(f"Dummy server executing on port {port}")
-        httpd.serve_forever()
+    try:
+        port = int(os.environ.get("PORT", 8080))
+        handler = SimpleHTTPRequestHandler
+        # Allow reuse address to prevent "Address already in use" on restarts
+        TCPServer.allow_reuse_address = True 
+        with TCPServer(("", port), handler) as httpd:
+            print(f"Dummy server executing on port {port}", flush=True)
+            httpd.serve_forever()
+    except Exception as e:
+        print(f"FATAL: Dummy Server Failed: {e}", flush=True)
+        # We might want to exit if port binding fails, as Render will kill us anyway
+        # But maybe the main bot can still run? 
+        # No, Render requires the port to be open.
+        os._exit(1)
 
 # Handlers will be imported here
 # from handlers import admin, user
@@ -200,8 +209,20 @@ def main():
     server_thread = threading.Thread(target=start_dummy_server, daemon=True)
     server_thread.start()
 
-    print("Bot started...")
-    application.run_polling()
+    print("Bot started...", flush=True)
+    try:
+        application.run_polling()
+    except Exception as e:
+        print(f"FATAL: Polling Error: {e}", flush=True)
+        # Keep process alive if needed or exit?
+        raise e
 
 if __name__ == '__main__':
-    main()
+    try:
+        # Override print to always flush? Or just use flush=True manually
+        print("Starting Bot Process...", flush=True)
+        main()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"FATAL: Main Process Crashed: {e}", flush=True)
