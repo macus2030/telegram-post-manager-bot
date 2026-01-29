@@ -1106,27 +1106,62 @@ async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # await update.message.reply_text("Debug: Processing news...") # Temporary
         
         text = update.message.text
+        photo = update.message.photo
+        
         if text == "❌ Cancel": return await cancel(update, context)
         
-        # Check if "Use Last News"
+        news_text = text
+        image_id = None
+        
+        if photo:
+            # Photo input
+            image_id = photo[-1].file_id
+            news_text = update.message.caption or "" # Caption is the news text
+        
+        # Check if "Use Last News" (Only applicable if text input)
         if text == "🔄 Use Last News":
             last = get_last_news()
             if last:
-                text = last
-                await update.message.reply_text(f"🔄 Using last news:\n{text}")
+                news_text = last
+                await update.message.reply_text(f"🔄 Using last news:\n{news_text}")
             else:
                  await update.message.reply_text("⚠ No previous news found. Please enter text.")
                  return MC_INPUT_NEWS
         
-        # Save this as new last news (Raw)
-        try:
-            save_last_news(text)
-        except Exception as e:
-            print(f"Error saving last news: {e}")
+        if not news_text and not image_id:
+             await update.message.reply_text("⚠ Please enter text or send an image.")
+             return MC_INPUT_NEWS
+        
+        # Save Last News (if text only or caption exists)
+        if news_text:
+            try:
+                save_last_news(news_text)
+            except Exception as e:
+                print(f"Error saving last news: {e}")
         
         # Auto-apply strikethrough as requested
-        escaped_text = html.escape(text)
-        context.user_data['mc_news'] = f"<s>{escaped_text}</s>"
+        # escaped_text = html.escape(news_text) # Don't escape yet, let template handle it? No, template expects raw? 
+        # Actually template uses {news} variable. If user sends HTML characters, they might break formatting if we don't escape.
+        # But if we escape, user can't use bold/italic.
+        # Let's assume input is plain text and we just strike it through as per requirement?
+        # WAIT: The requirement "Auto-apply strikethrough" line 1129 in original code:
+        # context.user_data['mc_news'] = f"<s>{escaped_text}</s>"
+        # I should keep this behavior.
+        
+        if news_text:
+            escaped_text = html.escape(news_text)
+            context.user_data['mc_news'] = f"<s>{escaped_text}</s>"
+        else:
+            context.user_data['mc_news'] = "" # No text, just image? Template might require text placeholder... 
+            # If template has {news}, and we provide empty string, it might look weird if consistent text is expected.
+            # But maybe image posts don't need news text? 
+            # Let's ensure mc_news is capable of being displayed.
+            
+        if image_id:
+             context.user_data['mc_news_image_id'] = image_id
+        else:
+             context.user_data.pop('mc_news_image_id', None) # Clear previous if any
+             
         return await mc_render_preview(update, context)
     except Exception as e:
         print(f"Error in mc_input_news: {e}")
@@ -1194,11 +1229,26 @@ async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         
         try:
-            await update.message.reply_text(
-                f"📄 **Preview**:\n\n{preview_text}\n\nSelect an action:",
-                reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
-                parse_mode=ParseMode.HTML
-            )
+            image_id = context.user_data.get('mc_news_image_id')
+            
+            if image_id:
+                try:
+                    await update.message.reply_photo(
+                        photo=image_id,
+                        caption=f"📄 **Preview**:\n\n{preview_text}\n\nSelect an action:",
+                        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
+                        parse_mode=ParseMode.HTML
+                    )
+                except Exception as e:
+                     await update.message.reply_text(f"❌ Preview Error (Photo): {e}\n\nRaw Text:\n{preview_text}")
+                     # If photo fails, fallback to text?
+                     # await update.message.reply_text( f"📄 **Preview**:\n\n{preview_text}\n\nSelect an action:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True), parse_mode=ParseMode.HTML)
+            else:
+                await update.message.reply_text(
+                    f"📄 **Preview**:\n\n{preview_text}\n\nSelect an action:",
+                    reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
+                    parse_mode=ParseMode.HTML
+                )
         except Exception as e:
             await update.message.reply_text(f"❌ Preview Error (HTML): {e}\n\nRaw Text:\n{preview_text}")
             return MC_INPUT_NEWS
@@ -1221,6 +1271,7 @@ async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = context.user_data
     preview_text = data.get('mc_preview_text', "")
     post_id = data.get('mc_post_id')
+    image_id = data.get('mc_news_image_id')
     
     if text == "📋 Copy Content":
         await update.message.reply_text(f"`{preview_text}`", parse_mode=ParseMode.MARKDOWN)
@@ -1229,11 +1280,19 @@ async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "👁️ Preview as Channel":
         # Dry Run
         try:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=preview_text,
-                parse_mode=ParseMode.HTML
-            )
+            if image_id:
+                await context.bot.send_photo(
+                    chat_id=update.effective_chat.id,
+                    photo=image_id,
+                    caption=preview_text,
+                    parse_mode=ParseMode.HTML
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=preview_text,
+                    parse_mode=ParseMode.HTML
+                )
             await update.message.reply_text("✅ Preview sent above.")
         except Exception as e:
             await update.message.reply_text(f"❌ Preview failed: {e}")
@@ -1245,11 +1304,19 @@ async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return MC_CONFIRM
             
         try:
-            msg = await context.bot.send_message(
-                chat_id=MAIN_CHANNEL_ID,
-                text=preview_text,
-                parse_mode=ParseMode.HTML
-            )
+            if image_id:
+                msg = await context.bot.send_photo(
+                    chat_id=MAIN_CHANNEL_ID,
+                    photo=image_id,
+                    caption=preview_text,
+                    parse_mode=ParseMode.HTML
+                )
+            else:
+                msg = await context.bot.send_message(
+                    chat_id=MAIN_CHANNEL_ID,
+                    text=preview_text,
+                    parse_mode=ParseMode.HTML
+                )
             
             # Update DB
             short_link_to_save = data.get('mc_short_link')
@@ -1259,7 +1326,8 @@ async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "posted_to_channel": True,
                 "posted_at": int(time.time()),
                 "channel_message_id": msg.message_id,
-                "main_channel_short_link": short_link_to_save
+                "main_channel_short_link": short_link_to_save,
+                "main_channel_photo_id": image_id
             })
             await update.message.reply_text(f"✅ Posted Successfully! (Msg ID: {msg.message_id})")
             await admin_dashboard(update, context)
@@ -1290,15 +1358,25 @@ async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return MC_CONFIRM
 
-async def execute_scheduled_post(context: ContextTypes.DEFAULT_TYPE, post_id: str, chat_id: int, text: str):
+async def execute_scheduled_post(context: ContextTypes.DEFAULT_TYPE, post_id: str, chat_id: int, text: str, image_id: str = None):
     """Core logic to send post and update DB. Returns True if successful."""
     try:
-        msg = await context.bot.send_message(
-            chat_id=chat_id,
-            text=text,
-            parse_mode=ParseMode.HTML
-        )
+        print(f"Executing Scheduled Post #{post_id} to {chat_id}")
         
+        if image_id:
+             msg = await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=image_id,
+                caption=text,
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            msg = await context.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                parse_mode=ParseMode.HTML
+            )
+            
         # Get existing post to preserve main_channel_short_link
         from storage import get_post
         post = get_post(post_id)
@@ -1334,8 +1412,9 @@ async def send_scheduled_post_job(context: ContextTypes.DEFAULT_TYPE):
     chat_id = data['chat_id']
     text = data['text']
     post_id = data['post_id']
+    image_id = data.get('image_id')
     
-    success = await execute_scheduled_post(context, post_id, chat_id, text)
+    success = await execute_scheduled_post(context, post_id, chat_id, text, image_id)
     
     if not success:
         # Retry Logic
@@ -1586,6 +1665,7 @@ async def mc_schedule_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
                     "channel_preview_text": preview_text,
                     "target_chat_id": target_chat_id,
                     "main_channel_short_link": context.user_data.get('mc_short_link'),
+                    "main_channel_photo_id": context.user_data.get('mc_news_image_id'),
                     "status": "pending",
                     "retry_count": 0
                 })
@@ -1599,7 +1679,8 @@ async def mc_schedule_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
                     data={
                         "chat_id": target_chat_id,
                         "text": preview_text,
-                        "post_id": post_id
+                        "post_id": post_id,
+                        "image_id": context.user_data.get('mc_news_image_id')
                     }
                 )
                 
@@ -1632,7 +1713,7 @@ main_channel_conv = ConversationHandler(
     states={
         MC_INPUT_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_input_id)],
         MC_INPUT_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_input_link)],
-        MC_INPUT_NEWS: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_input_news)],
+        MC_INPUT_NEWS: [MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_input_news)],
         MC_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_action)],
         MC_SCHED_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_sched_date_input)],
         MC_SCHED_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_sched_time_input)],
