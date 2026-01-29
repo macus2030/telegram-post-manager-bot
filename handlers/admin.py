@@ -1313,21 +1313,22 @@ async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return MC_CONFIRM
             
         try:
-            msg = None
             if image_id:
-                if len(preview_text) > 1000:
-                    # Too long, split
-                    await context.bot.send_photo(chat_id=MAIN_CHANNEL_ID, photo=image_id)
-                    msg = await context.bot.send_message(
-                        chat_id=MAIN_CHANNEL_ID,
-                        text=preview_text,
-                        parse_mode=ParseMode.HTML
-                    )
-                else:
+                try:
+                    # Try sending as caption first (Preferred)
                     msg = await context.bot.send_photo(
                         chat_id=MAIN_CHANNEL_ID,
                         photo=image_id,
                         caption=preview_text,
+                        parse_mode=ParseMode.HTML
+                    )
+                except Exception as e:
+                    # If caption too long or other error, split
+                    print(f"Warning: Failed to send caption, splitting message. Error: {e}")
+                    await context.bot.send_photo(chat_id=MAIN_CHANNEL_ID, photo=image_id)
+                    msg = await context.bot.send_message(
+                        chat_id=MAIN_CHANNEL_ID,
+                        text=preview_text,
                         parse_mode=ParseMode.HTML
                     )
             else:
@@ -1383,19 +1384,21 @@ async def execute_scheduled_post(context: ContextTypes.DEFAULT_TYPE, post_id: st
         print(f"Executing Scheduled Post #{post_id} to {chat_id}")
         
         if image_id:
-             if len(text) > 1000:
-                 # Too long, split
-                 await context.bot.send_photo(chat_id=chat_id, photo=image_id)
-                 msg = await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=text,
-                    parse_mode=ParseMode.HTML
-                )
-             else:
+             try:
+                 # Try sending as caption first
                  msg = await context.bot.send_photo(
                     chat_id=chat_id,
                     photo=image_id,
                     caption=text,
+                    parse_mode=ParseMode.HTML
+                )
+             except Exception as e:
+                 # Fallback to split if caption too long
+                 print(f"Warning: Failed to send scheduled caption, splitting. Error: {e}")
+                 await context.bot.send_photo(chat_id=chat_id, photo=image_id)
+                 msg = await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
                     parse_mode=ParseMode.HTML
                 )
         else:
