@@ -24,12 +24,7 @@ INITIAL_MSG_TEMPLATE = """LN Post : {post_id}
 
 {caption}
 
-INITIAL_MSG_TEMPLATE = """LN Post : {post_id}
-
-Content : {content_text}
-
 Download / Watch Link 👇🏻
-{short_link}
 {short_link}
 
 How to Open
