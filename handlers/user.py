@@ -144,7 +144,11 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # CASE 1: If shortened link exists → Send TEXT ONLY (no file attachment)
     # CASE 2: If no shortened link → Send actual file/content
     
-    has_main_channel_link = bool(post.get("main_channel_short_link"))
+    # DEBUG: Log the value
+    main_channel_link_value = post.get("main_channel_short_link")
+    print(f"DEBUG: Post #{post_id} main_channel_short_link = {main_channel_link_value}")
+    
+    has_main_channel_link = bool(main_channel_link_value)
     post_type = post.get("type", "link")
     
     # Prepare template based on case

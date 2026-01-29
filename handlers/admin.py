@@ -1252,11 +1252,14 @@ async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             
             # Update DB
+            short_link_to_save = data.get('mc_short_link')
+            print(f"DEBUG: Saving main_channel_short_link = {short_link_to_save} for post #{post_id}")
+            
             update_post(post_id, {
                 "posted_to_channel": True,
                 "posted_at": int(time.time()),
                 "channel_message_id": msg.message_id,
-                "main_channel_short_link": data.get('mc_short_link')
+                "main_channel_short_link": short_link_to_save
             })
             await update.message.reply_text(f"✅ Posted Successfully! (Msg ID: {msg.message_id})")
             await admin_dashboard(update, context)
