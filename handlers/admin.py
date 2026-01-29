@@ -157,9 +157,15 @@ async def migrate_passwords_command(update: Update, context: ContextTypes.DEFAUL
             new_caption = re.sub(r"(?i)^.*Password\s*:\s*.+$\n?", "", caption, flags=re.MULTILINE).strip()
             
             if not new_caption:
-                new_caption = "(Password Protected 🔐)"
-            elif "(Password Protected 🔐)" not in new_caption:
-                 new_caption += "\n(Password Protected 🔐)"
+                new_caption = f"Post: {post['id']}"
+            else:
+                 # Ensure Post ID is present if not user defined?
+                 # User usually pastes title. 
+                 # Let's append Post ID if not present? Or just leave it?
+                 # Requirement: "Post: {id}" should be there.
+                 # Let's Prepend "Post: {id}" if not present.
+                 if f"Post: {post['id']}" not in new_caption:
+                     new_caption = f"Post: {post['id']}\n\n{new_caption}"
             
             update_post(post['id'], {
                 "password": password,

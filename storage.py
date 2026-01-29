@@ -20,7 +20,7 @@ else:
 lock = threading.Lock()
 
 # Defaults from original storage.py
-INITIAL_MSG_TEMPLATE = """LN Post : {post_id}
+INITIAL_MSG_TEMPLATE = """{caption}
 
 {caption}
 
@@ -38,7 +38,7 @@ ISKO IGNORE KARO, VIDEOS KI LINK NICHE HAI..😉
 .
 .
 .
-Post :- LN{post_id}
+Post :- {post_id}
 
 👉 <a href="{bot_deep_link}">CLICK HERE TO OPEN POST</a>
 👉 <a href="{bot_deep_link}">CLICK HERE TO OPEN POST</a>
