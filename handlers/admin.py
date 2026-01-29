@@ -1232,17 +1232,26 @@ async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
             image_id = context.user_data.get('mc_news_image_id')
             
             if image_id:
-                try:
-                    await update.message.reply_photo(
-                        photo=image_id,
-                        caption=f"📄 **Preview**:\n\n{preview_text}\n\nSelect an action:",
+                if len(preview_text) > 1000:
+                    # Too long for caption, send separately
+                    await update.message.reply_photo(photo=image_id)
+                    await update.message.reply_text(
+                        f"📄 **Preview** (Text below image due to length):\n\n{preview_text}\n\nSelect an action:",
                         reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
                         parse_mode=ParseMode.HTML
                     )
-                except Exception as e:
-                     await update.message.reply_text(f"❌ Preview Error (Photo): {e}\n\nRaw Text:\n{preview_text}")
-                     # If photo fails, fallback to text?
-                     # await update.message.reply_text( f"📄 **Preview**:\n\n{preview_text}\n\nSelect an action:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True), parse_mode=ParseMode.HTML)
+                else:
+                    try:
+                        await update.message.reply_photo(
+                            photo=image_id,
+                            caption=f"📄 **Preview**:\n\n{preview_text}\n\nSelect an action:",
+                            reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
+                            parse_mode=ParseMode.HTML
+                        )
+                    except Exception as e:
+                         # Fallback if maybe calculated length was ok but HTML tags made it long
+                         await update.message.reply_photo(photo=image_id)
+                         await update.message.reply_text( f"📄 **Preview** (Fallback):\n\n{preview_text}\n\nSelect an action:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True), parse_mode=ParseMode.HTML)
             else:
                 await update.message.reply_text(
                     f"📄 **Preview**:\n\n{preview_text}\n\nSelect an action:",
@@ -1304,13 +1313,23 @@ async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return MC_CONFIRM
             
         try:
+            msg = None
             if image_id:
-                msg = await context.bot.send_photo(
-                    chat_id=MAIN_CHANNEL_ID,
-                    photo=image_id,
-                    caption=preview_text,
-                    parse_mode=ParseMode.HTML
-                )
+                if len(preview_text) > 1000:
+                    # Too long, split
+                    await context.bot.send_photo(chat_id=MAIN_CHANNEL_ID, photo=image_id)
+                    msg = await context.bot.send_message(
+                        chat_id=MAIN_CHANNEL_ID,
+                        text=preview_text,
+                        parse_mode=ParseMode.HTML
+                    )
+                else:
+                    msg = await context.bot.send_photo(
+                        chat_id=MAIN_CHANNEL_ID,
+                        photo=image_id,
+                        caption=preview_text,
+                        parse_mode=ParseMode.HTML
+                    )
             else:
                 msg = await context.bot.send_message(
                     chat_id=MAIN_CHANNEL_ID,
@@ -1364,12 +1383,21 @@ async def execute_scheduled_post(context: ContextTypes.DEFAULT_TYPE, post_id: st
         print(f"Executing Scheduled Post #{post_id} to {chat_id}")
         
         if image_id:
-             msg = await context.bot.send_photo(
-                chat_id=chat_id,
-                photo=image_id,
-                caption=text,
-                parse_mode=ParseMode.HTML
-            )
+             if len(text) > 1000:
+                 # Too long, split
+                 await context.bot.send_photo(chat_id=chat_id, photo=image_id)
+                 msg = await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode=ParseMode.HTML
+                )
+             else:
+                 msg = await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=image_id,
+                    caption=text,
+                    parse_mode=ParseMode.HTML
+                )
         else:
             msg = await context.bot.send_message(
                 chat_id=chat_id,
