@@ -1134,7 +1134,7 @@ async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
             image_id = photo[-1].file_id
             news_text = update.message.caption or "" # Caption is the news text
         
-        # Check if "Use Last News" (Only        if text == "🔄 Use Last News":
+        if text == "🔄 Use Last News":
             last_data = get_last_news()
             if last_data and (last_data.get('text') or last_data.get('image_id')):
                 news_text = last_data.get('text') or ""
