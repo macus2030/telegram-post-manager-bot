@@ -37,6 +37,13 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     raw_arg = args[0]
+    
+    # Check for Verified Prefix (Bypass Shortener)
+    is_verified = False
+    if raw_arg.startswith("get_"):
+        is_verified = True
+        raw_arg = raw_arg[4:] # Remove "get_"
+        
     from utils.helpers import decode_payload
     decoded_id = decode_payload(raw_arg)
     
@@ -48,15 +55,16 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Check Force Subscribe (Feature)
     missing_channels = await check_membership(user.id, context)
-    
     if missing_channels:
         # Build UI
         kb = []
         for ch in missing_channels:
             kb.append([InlineKeyboardButton(f"📢 Join {ch['title']}", url=ch['link'])])
             
-        # Use raw_arg (encoded) in callback to keep it hidden
-        kb.append([InlineKeyboardButton("🔄 Try Again", callback_data=f"check_sub_{raw_arg}")])
+        # Use raw_arg (encoded) in callback to keep it hidden, verify prefix is preserved if needed?
+        # If user clicked "get_", we want to preserve "get_" so they get content after joining.
+        callback_arg = f"get_{raw_arg}" if is_verified else raw_arg
+        kb.append([InlineKeyboardButton("🔄 Try Again", callback_data=f"check_sub_{callback_arg}")])
         
         await update.message.reply_text(
             "⚠️ **Access Denied**\n\n"
@@ -152,19 +160,18 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     post_type = post.get("type", "link")
     
     # Prepare template based on case
-    if has_main_channel_link:
-        # CASE 1: Main Channel Short Link exists
+    # IF VERIFIED (user came from shortener), treat as Case 2 (Send File)
+    if has_main_channel_link and not is_verified:
+        # CASE 1: Main Channel Short Link exists AND Not Verified
         # Always send as text message, never attach file
         # This allows for monetization and copyright protection
         force_text_only = True
         
         # Use the standard template with links
-        # DON'T remove link section
-        # DON'T add file prefix
         pass  # Keep template as is
         
     else:
-        # CASE 2: No Main Channel Short Link
+        # CASE 2: No Main Channel Short Link OR Verified
         # Send actual file/content as normal
         force_text_only = False
         

@@ -1049,17 +1049,18 @@ async def mc_input_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from utils.helpers import encode_payload
         encoded_id = encode_payload(post_id)
         deep_link = f"https://t.me/{bot_username}?start={encoded_id}"
+        verified_link = f"https://t.me/{bot_username}?start=get_{encoded_id}"
         context.user_data['mc_deep_link'] = deep_link
         
         await update.message.reply_text(
             f"✅ Validated Post #{post_id}\n\n"
             f"🔗 **Bot Deep Link**:\n`{deep_link}`\n\n"
+            f"🔒 **Shortener Destination Link** (Use THIS one):\n`{verified_link}`\n\n"
             "👇 **Action Required** 👇\n"
-            "1. Copy the **Deep Link** above.\n"
-            "2. Shorten it using your URL Shortener.\n"
-            "3. Send the **Shortened Version** here.\n\n"
-            "⚠️ **Do NOT send the file/content link here.**\n"
-            "This link must open the bot!",
+            "1. Copy the **Shortener Destination Link** (`get_...`).\n"
+            "2. Paste it into your URL Shortener as the Destination/Long URL.\n"
+            "3. Send the **Resulting Short Link** here.\n\n"
+            "⚠️ **IMPORTANT**: You MUST use the `get_` link for the shortener, otherwise users will be stuck in a loop!",
             reply_markup=ReplyKeyboardMarkup([["⏭️ Skip"], ["❌ Cancel", "🏠 Dashboard"]], resize_keyboard=True),
             parse_mode=ParseMode.MARKDOWN
         )
