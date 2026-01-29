@@ -415,20 +415,34 @@ def update_help_link(link: str):
         conn.commit()
         conn.close()
 
-def get_last_news() -> Optional[str]:
+def get_last_news() -> dict:
     with lock:
         conn = get_connection()
         c = conn.cursor()
         c.execute("SELECT value FROM config WHERE key = 'last_news'")
         row = c.fetchone()
+        
+        c.execute("SELECT value FROM config WHERE key = 'last_news_image'")
+        row_img = c.fetchone()
+        
         conn.close()
-    return row[0] if row else None
+    
+    return {
+        "text": row[0] if row else None,
+        "image_id": row_img[0] if row_img else None
+    }
 
-def save_last_news(content: str):
+def save_last_news(content: str, image_id: str = None):
     with lock:
         conn = get_connection()
         c = conn.cursor()
         c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ("last_news", content))
+        
+        if image_id:
+            c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ("last_news_image", image_id))
+        else:
+            c.execute("DELETE FROM config WHERE key = 'last_news_image'")
+            
         conn.commit()
         conn.close()
 

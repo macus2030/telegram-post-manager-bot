@@ -1087,7 +1087,16 @@ async def mc_input_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "❌ Cancel": return await cancel(update, context)
     
     if text.lower() == 'skip' or text == "⏭️ Skip":
-        short_link = context.user_data['mc_deep_link']
+        # If skip, we can't use the raw deep link because it might loop if user clicks it (since it's not "verified").
+        # We must use the "get_" link structure so the bot sees it as verified directly.
+        # But wait, mc_deep_link is start=XYZ. 
+        # If we set short_link = start=get_XYZ, then when user clicks, it works!
+        raw_deep_link = context.user_data['mc_deep_link']
+        if "start=" in raw_deep_link:
+             prefix, payload = raw_deep_link.split("start=")
+             short_link = f"{prefix}start=get_{payload}"
+        else:
+             short_link = raw_deep_link # Fallback
     else:
 
         text_in = text.strip()
@@ -1125,12 +1134,16 @@ async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
             image_id = photo[-1].file_id
             news_text = update.message.caption or "" # Caption is the news text
         
-        # Check if "Use Last News" (Only applicable if text input)
-        if text == "🔄 Use Last News":
-            last = get_last_news()
-            if last:
-                news_text = last
-                await update.message.reply_text(f"🔄 Using last news:\n{news_text}")
+        # Check if "Use Last News" (Only        if text == "🔄 Use Last News":
+            last_data = get_last_news()
+            if last_data and (last_data.get('text') or last_data.get('image_id')):
+                news_text = last_data.get('text') or ""
+                image_id = last_data.get('image_id')
+                
+                if image_id:
+                     await update.message.reply_photo(photo=image_id, caption=f"🔄 Using last news:\n{news_text}")
+                else:
+                     await update.message.reply_text(f"🔄 Using last news:\n{news_text}")
             else:
                  await update.message.reply_text("⚠ No previous news found. Please enter text.")
                  return MC_INPUT_NEWS
@@ -1140,11 +1153,10 @@ async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
              return MC_INPUT_NEWS
         
         # Save Last News (if text only or caption exists)
-        if news_text:
-            try:
-                save_last_news(news_text)
-            except Exception as e:
-                print(f"Error saving last news: {e}")
+        try:
+            save_last_news(news_text, image_id)
+        except Exception as e:
+            print(f"Error saving last news: {e}")
         
         # Auto-apply strikethrough as requested
         # escaped_text = html.escape(news_text) # Don't escape yet, let template handle it? No, template expects raw? 
