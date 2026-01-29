@@ -302,22 +302,30 @@ async def handle_password_callback(update: Update, context: ContextTypes.DEFAULT
     
     # If no password is set, show default message
     if not password:
-        await query.answer("✅ Password Info", show_alert=False)
-        await query.message.reply_text(
+        await query.answer("ℹ️ No password required", show_alert=False)
+        sent = await query.message.reply_text(
             "🔑 <b>Password:</b>\n<code>No password required for this post</code>", 
             parse_mode=ParseMode.HTML
         )
+        # Auto-delete after 30 seconds
+        context.job_queue.run_once(
+            lambda ctx: ctx.bot.delete_message(chat_id=query.message.chat_id, message_id=sent.message_id),
+            30
+        )
         return
         
-    # Send as hidden text (or alert?) user asked for "message password copyed" and "directly copy"
-    # Alert is best for "copy"? No, Telegram alerts don't copy to clipboard easily.
-    # Sending a message `code` allows tap to copy.
-    # User Request: "currunt password of file or link directly copu and messeg password copyed"
-    # Implementation: Send a ephemeral message with monospaced password.
+    # Show helpful instruction in popup
+    await query.answer("👆 Tap the password to copy it!", show_alert=False)
     
-    await query.answer("✅ Password Sent!", show_alert=False)
-    await query.message.reply_text(
-        f"🔑 Password:\n<code>{password}</code>", 
+    # Send password in code block (tap to copy)
+    sent = await query.message.reply_text(
+        f"🔑 <b>Password</b> (tap to copy):\n<code>{password}</code>", 
         parse_mode=ParseMode.HTML
+    )
+    
+    # Auto-delete password message after 60 seconds for security
+    context.job_queue.run_once(
+        lambda ctx: ctx.bot.delete_message(chat_id=query.message.chat_id, message_id=sent.message_id),
+        60
     )
 
