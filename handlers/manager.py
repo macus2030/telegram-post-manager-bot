@@ -178,6 +178,7 @@ async def start_edit_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🏷 Edit Category", callback_data="field_category")],
         [InlineKeyboardButton("🔗 Edit Link", callback_data="field_link")],
         [InlineKeyboardButton("👁 Edit Preview Link", callback_data="field_preview_link")],
+        [InlineKeyboardButton("🖼️ Edit Preview Image", callback_data="field_preview_image")],
         [InlineKeyboardButton("👁 Preview Content", callback_data=f"preview_{post_id}")],
         [InlineKeyboardButton("⏱️ Edit Timer", callback_data="field_timer")]
     ]
@@ -210,7 +211,9 @@ async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "field_caption": "caption",
         "field_category": "category",
         "field_link": "link",
+        "field_link": "link",
         "field_preview_link": "preview_link",
+        "field_preview_image": "preview_image_id",
         "field_timer": "auto_delete_timer",
         "field_file": "file",
         "field_password": "password"
@@ -263,6 +266,8 @@ async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"**Current**: {current_val}\n\n"
             "Send the new *Preview Link* URL (e.g. `https://google.com`):"
         )
+    elif field == "preview_image_id":
+        prompt = "🖼️ Send the **Preview Image** (Photo) for this post:"
     elif field == "auto_delete_timer":
         prompt = (
             f"⏱️ **Edit Timer**\n\n"
@@ -314,6 +319,7 @@ async def edit_input_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mime_type = getattr(doc, 'mime_type', 'application/octet-stream')
         file_size = getattr(doc, 'file_size', 0)
         
+
         updates = {
             "file_id": file_id,
             "file_unique_id": file_unique_id,
@@ -322,6 +328,16 @@ async def edit_input_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "file_size": file_size
         }
         
+    elif field == "preview_image_id":
+        photo = update.message.photo
+        if not photo:
+             await update.message.reply_text("❌ Please send a valid PHOTO.")
+             return EDIT_INPUT
+             
+        # Take largest
+        file_id = photo[-1].file_id
+        updates = {"preview_image_id": file_id}
+
     else:
         # Handle Text Inputs
         text = update.message.text

@@ -242,17 +242,26 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if preview_link:
                 kb.append([InlineKeyboardButton("👁 Post Preview", url=preview_link)])
             
-            # We already have the text in final_caption
-            # Ensure we don't block other buttons if we ever add them, but currently none.
-            
             reply_markup = InlineKeyboardMarkup(kb) if kb else None
             
-            sent_msg = await update.message.reply_text(
-                final_caption, 
-                parse_mode=ParseMode.HTML, 
-                protect_content=is_protected,
-                reply_markup=reply_markup
-            )
+            # Feature: Preview Image
+            preview_image_id = post.get("preview_image_id")
+            
+            if preview_image_id:
+                 sent_msg = await update.message.reply_photo(
+                    photo=preview_image_id,
+                    caption=final_caption,
+                    parse_mode=ParseMode.HTML,
+                    protect_content=is_protected,
+                    reply_markup=reply_markup
+                 )
+            else:
+                 sent_msg = await update.message.reply_text(
+                    final_caption, 
+                    parse_mode=ParseMode.HTML, 
+                    protect_content=is_protected,
+                    reply_markup=reply_markup
+                 )
             
         # CASE 2: No Main Channel Short Link → Send actual file/content
         elif post_type == "file":
