@@ -1,26 +1,30 @@
 import logging
 import os
 import threading
-from http.server import SimpleHTTPRequestHandler
-from socketserver import TCPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, CallbackQueryHandler, MessageHandler, filters, PicklePersistence
+# Robust Health Check Server for Render/UptimeRobot
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b"OK")
+    
+    def log_message(self, format, *args):
+        # Suppress log noise from frequent uptime checks
+        pass
 
-import datetime
-
-from config import TELEGRAM_TOKEN
-
-# Dummy Server for Render Binding
 def start_dummy_server():
     try:
         port = int(os.environ.get("PORT", 8080))
-        handler = SimpleHTTPRequestHandler
-        # Allow reuse address to prevent "Address already in use" on restarts
-        TCPServer.allow_reuse_address = True 
-        with TCPServer(("", port), handler) as httpd:
-            print(f"Dummy server executing on port {port}", flush=True)
-            httpd.serve_forever()
+        # Bind to 0.0.0.0 to ensure external access
+        server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+        print(f"Health Check Server listening on port {port}", flush=True)
+        server.serve_forever()
+    except Exception as e:
+        print(f"FATAL: Health Check Server Failed: {e}", flush=True)
+        os._exit(1)
     except Exception as e:
         print(f"FATAL: Dummy Server Failed: {e}", flush=True)
         # We might want to exit if port binding fails, as Render will kill us anyway
