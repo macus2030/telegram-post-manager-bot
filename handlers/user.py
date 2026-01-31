@@ -244,24 +244,21 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             reply_markup = InlineKeyboardMarkup(kb) if kb else None
             
-            # Feature: Preview Image
+            # Feature: Preview Image Button
             preview_image_id = post.get("preview_image_id")
-            
             if preview_image_id:
-                 sent_msg = await update.message.reply_photo(
-                    photo=preview_image_id,
-                    caption=final_caption,
-                    parse_mode=ParseMode.HTML,
-                    protect_content=is_protected,
-                    reply_markup=reply_markup
-                 )
-            else:
-                 sent_msg = await update.message.reply_text(
-                    final_caption, 
-                    parse_mode=ParseMode.HTML, 
-                    protect_content=is_protected,
-                    reply_markup=reply_markup
-                 )
+                 # Add Button instead of sending photo directly
+                 kb.insert(0, [InlineKeyboardButton("🖼️ View Preview Image", callback_data=f"view_preview_{post_id}")])
+            
+            reply_markup = InlineKeyboardMarkup(kb) if kb else None
+            
+            # Send TEXT message (with potential buttons)
+            sent_msg = await update.message.reply_text(
+                final_caption, 
+                parse_mode=ParseMode.HTML, 
+                protect_content=is_protected,
+                reply_markup=reply_markup
+            )
             
         # CASE 2: No Main Channel Short Link → Send actual file/content
         elif post_type == "file":
@@ -391,3 +388,28 @@ async def handle_password_callback(update: Update, context: ContextTypes.DEFAULT
         60
     )
 
+
+async def handle_preview_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle View Preview Image button."""
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        data = query.data.split("_")
+        post_id = data[-1] # view_preview_123 -> 123
+        
+        post = get_post(post_id)
+        if not post:
+             await query.message.reply_text("❌ Post not found.")
+             return
+             
+        image_id = post.get("preview_image_id")
+        if image_id:
+            from utils.helpers import send_temp_photo
+            # 10 second delay as requested
+            await send_temp_photo(context, query.message.chat_id, image_id, caption="🖼️ **Preview Image** (Auto-deletes in 10s)", delay=10)
+        else:
+            await query.message.reply_text("❌ No preview image available.")
+            
+    except Exception as e:
+        print(f"Preview callback error: {e}")

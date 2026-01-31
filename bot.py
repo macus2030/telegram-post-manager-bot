@@ -160,7 +160,7 @@ def main():
 
     # Register Handlers
     from handlers.admin import create_post_conv, admin_dashboard, clear_chat_history, main_channel_conv, scheduled_dashboard, sched_edit_conv, handle_schedule_callback, migrate_passwords_command
-    from handlers.user import start_user, handle_not_joined, handle_password_callback
+    from handlers.user import start_user, handle_not_joined, handle_password_callback, handle_preview_callback
     from handlers.manager import post_manager, handle_manager_callback, edit_post_conv
     from handlers.stats import stats_dashboard
     from handlers.bulk import bulk_conv
@@ -189,9 +189,10 @@ def main():
     application.add_handler(CallbackQueryHandler(handle_not_joined, pattern="^check_sub_"))
     application.add_handler(CallbackQueryHandler(handle_password_callback, pattern="^pass_"))
     application.add_handler(CallbackQueryHandler(handle_schedule_callback, pattern="^sched_"))
+    application.add_handler(CallbackQueryHandler(handle_preview_callback, pattern="^view_preview_"))
     application.add_handler(CallbackQueryHandler(handle_users_callback, pattern="^(users_|search_user|ban_|unban_|back_users)"))
     application.add_handler(CallbackQueryHandler(handle_bc_callback, pattern="^bc_"))
-    application.add_handler(CallbackQueryHandler(handle_manager_callback, pattern="^(?!cat_|add_new_category|back_to_dashboard|check_sub_|sched_|users_|search_user|ban_|unban_|bc_).*")) 
+    application.add_handler(CallbackQueryHandler(handle_manager_callback, pattern="^(?!cat_|add_new_category|back_to_dashboard|check_sub_|sched_|users_|search_user|ban_|unban_|bc_|view_preview_).*")) 
     # Old category callbacks are no longer needed as we use ReplyKeyboard, but keeping pattern exclusion in manager is fine.
     
     # Commands

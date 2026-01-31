@@ -12,6 +12,20 @@ async def send_temp_message(context: ContextTypes.DEFAULT_TYPE, chat_id: int, te
     except Exception as e:
         print(f"Error sending temp message: {e}")
 
+async def send_temp_photo(context: ContextTypes.DEFAULT_TYPE, chat_id: int, photo_id: str, caption: str = "", delay: int = 10, protect_content: bool = True):
+    """Send a photo that auto-deletes after 'delay' seconds."""
+    try:
+        msg = await context.bot.send_photo(
+            chat_id=chat_id, 
+            photo=photo_id, 
+            caption=caption, 
+            parse_mode=ParseMode.HTML,
+            protect_content=protect_content
+        )
+        asyncio.create_task(delete_message_delayed(msg, delay))
+    except Exception as e:
+        print(f"Error sending temp photo: {e}")
+
 async def delete_message_delayed(message: Message, delay: int):
     """Wait for delay and then delete the message."""
     await asyncio.sleep(delay)
