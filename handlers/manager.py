@@ -138,8 +138,12 @@ async def render_post_detail(update: Update, context: ContextTypes.DEFAULT_TYPE,
             [InlineKeyboardButton("🔙 Back to List", callback_data="list_All_0")]
         ]
         
-        # Add Preview Button
-        kb.insert(1, [InlineKeyboardButton("👁 Preview Content", callback_data=f"preview_{post_id}")])
+        # Add Preview Button (if link exists)
+        if post.get('preview_link'):
+            kb.insert(1, [InlineKeyboardButton("👁 View Preview Link", url=post.get('preview_link'))])
+
+        # Add Preview Content (Caption/File) Button
+        kb.insert(2, [InlineKeyboardButton("👁 Preview Content Msg", callback_data=f"preview_{post_id}")])
         
         markup = InlineKeyboardMarkup(kb)
         
@@ -173,6 +177,8 @@ async def start_edit_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📝 Edit Caption", callback_data="field_caption")],
         [InlineKeyboardButton("🏷 Edit Category", callback_data="field_category")],
         [InlineKeyboardButton("🔗 Edit Link", callback_data="field_link")],
+        [InlineKeyboardButton("👁 Edit Preview Link", callback_data="field_preview_link")],
+        [InlineKeyboardButton("👁 Preview Content", callback_data=f"preview_{post_id}")],
         [InlineKeyboardButton("⏱️ Edit Timer", callback_data="field_timer")]
     ]
     
@@ -204,6 +210,7 @@ async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "field_caption": "caption",
         "field_category": "category",
         "field_link": "link",
+        "field_preview_link": "preview_link",
         "field_timer": "auto_delete_timer",
         "field_file": "file",
         "field_password": "password"
@@ -249,6 +256,12 @@ async def edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🔗 **Edit Link**\n\n"
             f"**Current**: {current_val}\n\n"
             "Send the new *Link* URL:"
+        )
+    elif field == "preview_link":
+        prompt = (
+            f"👁 **Edit Preview Link**\n\n"
+            f"**Current**: {current_val}\n\n"
+            "Send the new *Preview Link* URL (e.g. `https://google.com`):"
         )
     elif field == "auto_delete_timer":
         prompt = (
@@ -323,6 +336,17 @@ async def edit_input_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = text.strip()
             if not (text.startswith("http://") or text.startswith("https://")):
                 text = f"https://{text}"
+            updates[field] = text
+
+        elif field == "preview_link":
+            text = text.strip()
+            if not (text.startswith("http://") or text.startswith("https://")):
+                text = f"https://{text}"
+            
+            # Warn if link points to bot (Optional Polish)
+            if context.bot.username and context.bot.username.lower() in text.lower():
+                 await update.message.reply_text("⚠️ Warning: Preview link appears to point to this bot. Ensure this is intended.")
+            
             updates[field] = text
         
         elif field == "auto_delete_timer":

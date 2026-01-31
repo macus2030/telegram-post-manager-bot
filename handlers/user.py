@@ -172,7 +172,24 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Prepare template based on case
     # IF VERIFIED (user came from shortener), treat as Case 2 (Send File)
-    if has_main_channel_link and not is_verified:
+    
+    # --- INFINITE LOOP FIX ---
+    # Check if the "Short Link" is actually pointing back to this bot with the same start param
+    # This prevents users from creating a loop by carrying the start param in the short link
+    is_loop_detected = False
+    if has_main_channel_link:
+        # Simple check: Does the link contain our username?
+        # Note: This is an approximation. A perfect check requires expanding short URLs which is slow.
+        # We rely on text matching.
+        bot_username = context.bot.username
+        if bot_username and bot_username.lower() in main_channel_link_value.lower():
+             # If it also contains the start param (raw_arg), it's likely a loop
+             if f"start={raw_arg}" in main_channel_link_value or f"start={post_id}" in main_channel_link_value:
+                 is_loop_detected = True
+                 import logging
+                 logging.warning(f"[WARN] ShortLinkLoopDetected | post_id={post_id} | user_id={user.id} | raw_arg={raw_arg}")
+
+    if has_main_channel_link and not is_verified and not is_loop_detected:
         # CASE 1: Main Channel Short Link exists AND Not Verified
         # Always send as text message, never attach file
         # This allows for monetization and copyright protection
@@ -214,14 +231,27 @@ async def start_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_protected = get_protect_content()
         
         # CASE 1: Main Channel Short Link exists AND Not Verified → TEXT ONLY (NO PASSWORD BUTTON)
-        if has_main_channel_link and not is_verified:
+        if has_main_channel_link and not is_verified and not is_loop_detected:
             # Send ONLY text message (no file attachment, no password button)
             # This is the monetization/copyright protection case
             # Password button should only appear when user clicks shortened link
+            
+            # Feature: Add Preview Link Button if set
+            kb = []
+            preview_link = post.get("preview_link")
+            if preview_link:
+                kb.append([InlineKeyboardButton("👁 Post Preview", url=preview_link)])
+            
+            # We already have the text in final_caption
+            # Ensure we don't block other buttons if we ever add them, but currently none.
+            
+            reply_markup = InlineKeyboardMarkup(kb) if kb else None
+            
             sent_msg = await update.message.reply_text(
                 final_caption, 
                 parse_mode=ParseMode.HTML, 
-                protect_content=is_protected
+                protect_content=is_protected,
+                reply_markup=reply_markup
             )
             
         # CASE 2: No Main Channel Short Link → Send actual file/content
