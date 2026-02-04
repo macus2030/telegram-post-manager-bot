@@ -1,14 +1,14 @@
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, MessageOriginChannel
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
-from storage import get_message_template, update_message_template, get_help_link, update_help_link, get_main_template, update_main_template, get_auto_delete_timer, update_auto_delete_timer, get_protect_content, update_protect_content, get_welcome_message, update_welcome_message
+from storage import get_message_template, update_message_template, get_help_link, update_help_link, get_main_template, update_main_template, get_auto_delete_timer, update_auto_delete_timer, get_protect_content, update_protect_content, get_welcome_message, update_welcome_message, get_backup_interval, update_backup_interval
 from utils.helpers import check_admin
 from config import HOW_TO_OPEN_LINK
 from handlers.admin import MENU_REGEX, global_fallback, cancel
 import logging
 
 # States
-SELECT_SETTING, EDIT_MSG_TEMPLATE, EDIT_HELP_LINK, EDIT_MAIN_TEMPLATE, MANAGE_FORCE_SUB, ADD_FS_CHANNEL, EDIT_GLOBAL_TIMER, EDIT_WELCOME_MSG = range(8)
+SELECT_SETTING, EDIT_MSG_TEMPLATE, EDIT_HELP_LINK, EDIT_MAIN_TEMPLATE, MANAGE_FORCE_SUB, ADD_FS_CHANNEL, EDIT_GLOBAL_TIMER, EDIT_WELCOME_MSG, EDIT_BACKUP_INTERVAL = range(9)
 
 async def settings_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entry point for Settings."""
@@ -26,7 +26,7 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         ["📝 Edit Message Template", "📢 Edit Main Channel Template"],
         ["🔗 Edit Help Link", "🔐 Manage Force Subscribe"],
         ["⏱️ Edit Global Timer", "🔒 Toggle Content Protection"],
-        ["👋 Edit Welcome Message"],
+        ["👋 Edit Welcome Message", "💾 Backup Interval"],
         ["🔙 Back to Dashboard"]
     ]
     
@@ -117,6 +117,22 @@ async def handle_setting_selection(update: Update, context: ContextTypes.DEFAULT
             parse_mode="Markdown"
         )
         return EDIT_WELCOME_MSG
+
+    if text == "💾 Backup Interval":
+        current_hours = get_backup_interval()
+        await update.message.reply_text(
+            "💾 *Edit Auto-Backup Interval*\n\n"
+            f"Current Interval: **{current_hours} hours**\n\n"
+            "The bot will automatically send you a backup of the database at this interval.\n"
+            "Backup is also sent on every bot startup.\n\n"
+            "Send the new interval in **hours** (e.g. `6`, `12`, `24`):\n"
+            "• `6` = Every 6 hours\n"
+            "• `12` = Twice a day\n"
+            "• `24` = Once a day",
+            reply_markup=ReplyKeyboardMarkup([["❌ Cancel", "🏠 Dashboard"]], resize_keyboard=True),
+            parse_mode="Markdown"
+        )
+        return EDIT_BACKUP_INTERVAL
 
     await update.message.reply_text("Invalid selection.")
     return SELECT_SETTING
@@ -327,6 +343,33 @@ async def save_global_timer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ Global Timer updated to **{mins} minutes**.", parse_mode="Markdown")
     return await show_settings_menu(update, context)
 
+async def save_backup_interval(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text == "❌ Cancel":
+        return await show_settings_menu(update, context)
+        
+    if not text.isdigit():
+        await update.message.reply_text("⚠ Invalid input. Please enter a number in hours.")
+        return EDIT_BACKUP_INTERVAL
+        
+    hours = int(text)
+    if hours < 1:
+        await update.message.reply_text("⚠ Minimum interval is 1 hour.")
+        return EDIT_BACKUP_INTERVAL
+    if hours > 168:  # 1 week max
+        await update.message.reply_text("⚠ Maximum interval is 168 hours (1 week).")
+        return EDIT_BACKUP_INTERVAL
+    
+    update_backup_interval(hours)
+    
+    await update.message.reply_text(
+        f"✅ **Backup Interval Updated!**\n\n"
+        f"New Interval: **{hours} hours**\n\n"
+        f"_Note: Changes will take effect on next bot restart._",
+        parse_mode="Markdown"
+    )
+    return await show_settings_menu(update, context)
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Cancelled.")
     from handlers.admin import admin_dashboard
@@ -344,6 +387,7 @@ settings_conv = ConversationHandler(
             MessageHandler(filters.Regex("^⏱️ Edit Global Timer$"), handle_setting_selection),
             MessageHandler(filters.Regex("^🔒 Toggle Content Protection$"), handle_setting_selection),
             MessageHandler(filters.Regex("^👋 Edit Welcome Message$"), handle_setting_selection),
+            MessageHandler(filters.Regex("^💾 Backup Interval$"), handle_setting_selection),
             MessageHandler(filters.Regex("^🔙 Back to Dashboard$"), handle_setting_selection)
         ],
         EDIT_MSG_TEMPLATE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_msg_template)],
@@ -358,7 +402,8 @@ settings_conv = ConversationHandler(
             MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), guide_fs_action)
         ],
         ADD_FS_CHANNEL: [MessageHandler((filters.TEXT | filters.FORWARDED) & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), add_fs_channel)],
-        EDIT_GLOBAL_TIMER: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_global_timer)]
+        EDIT_GLOBAL_TIMER: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_global_timer)],
+        EDIT_BACKUP_INTERVAL: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_backup_interval)]
     },
     fallbacks=[
         MessageHandler(filters.Regex(MENU_REGEX), global_fallback),

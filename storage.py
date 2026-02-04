@@ -470,6 +470,31 @@ def update_auto_delete_timer(seconds: int):
         conn.commit()
         conn.close()
 
+def get_backup_interval() -> int:
+    """Returns backup interval in hours. Default 24 hours."""
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT value FROM config WHERE key = 'backup_interval'")
+        row = c.fetchone()
+        conn.close()
+        
+    if row:
+        try:
+            return int(row[0])
+        except:
+            pass
+    return 24  # Default 24 hours
+
+def update_backup_interval(hours: int):
+    """Update backup interval in hours."""
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ("backup_interval", str(hours)))
+        conn.commit()
+        conn.close()
+
 def get_protect_content() -> bool:
     with lock:
         conn = get_connection()

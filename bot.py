@@ -123,6 +123,34 @@ async def schedule_watchdog(context: ContextTypes.DEFAULT_TYPE):
     """Periodic check for missed schedules."""
     await restore_scheduled_jobs(context)
 
+async def auto_backup_job(context: ContextTypes.DEFAULT_TYPE):
+    """Send database backup to admin automatically."""
+    from config import ADMIN_ID
+    from storage import DB_FILE
+    import os
+    
+    if not ADMIN_ID or ADMIN_ID == 0:
+        logging.warning("Auto-backup skipped: ADMIN_ID not configured")
+        return
+    
+    if not os.path.exists(DB_FILE):
+        logging.warning(f"Auto-backup skipped: {DB_FILE} not found")
+        return
+    
+    try:
+        await context.bot.send_document(
+            chat_id=ADMIN_ID,
+            document=open(DB_FILE, 'rb'),
+            caption=f"🔄 **Auto-Backup**\n\n"
+                    f"📅 {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"💾 Your database has been backed up automatically.\n\n"
+                    f"_Keep this file safe to restore your data!_",
+            parse_mode="Markdown"
+        )
+        logging.info("✅ Auto-backup sent to admin successfully")
+    except Exception as e:
+        logging.error(f"❌ Auto-backup failed: {e}")
+
 
 def main():
     if not TELEGRAM_TOKEN:
@@ -154,6 +182,15 @@ def main():
         
         # Schedule watchdog
         app.job_queue.run_repeating(schedule_watchdog, interval=60, first=10)
+        
+        # Auto-backup: Run once on startup (after 30 sec) and then at configured interval
+        from storage import get_backup_interval
+        backup_hours = get_backup_interval()
+        backup_seconds = backup_hours * 3600  # Convert hours to seconds
+        
+        app.job_queue.run_once(auto_backup_job, when=30, name="startup_backup")
+        app.job_queue.run_repeating(auto_backup_job, interval=backup_seconds, first=backup_seconds, name="daily_backup")
+        logging.info(f"🔄 Auto-backup scheduled: Startup + Every {backup_hours} hours")
 
         
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).persistence(persistence).post_init(post_init).build()
