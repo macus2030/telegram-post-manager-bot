@@ -1,7 +1,7 @@
 import logging
 import os
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters, CallbackQueryHandler, PicklePersistence
 from config import TELEGRAM_TOKEN
@@ -14,26 +14,33 @@ from handlers.admin import send_scheduled_post_job, execute_scheduled_post
 # Robust Health Check Server for Render/UptimeRobot
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
-        self.end_headers()
-        self.wfile.write(b"OK")
+        try:
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b"OK")
+        except Exception:
+            pass  # Ignore broken pipe errors
 
     def do_HEAD(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
-        self.end_headers()
+        try:
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+        except Exception:
+            pass
     
     def log_message(self, format, *args):
         # Log health checks to debug UptimeRobot connection
-        if "HealthCheck" not in format:
-             print(f"Health Check PING: {self.client_address[0]}", flush=True)
+        # Only log external IPs (not 127.0.0.1 which is Render internal)
+        if self.client_address[0] != "127.0.0.1":
+            print(f"Health Check PING from External: {self.client_address[0]}", flush=True)
 
 def start_dummy_server():
     try:
         port = int(os.environ.get("PORT", 8080))
         # Bind to 0.0.0.0 to ensure external access
-        server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+        server = ThreadingHTTPServer(("0.0.0.0", port), HealthCheckHandler)
         print(f"Health Check Server listening on port {port}", flush=True)
         server.serve_forever()
     except Exception as e:
