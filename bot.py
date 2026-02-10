@@ -83,6 +83,9 @@ async def auto_backup_job(context: ContextTypes.DEFAULT_TYPE):
     if not backup_sent:
         logging.warning("Auto-backup generated but no destination configured (Admin or Channel missing)")
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log the error and send a telegram message to notify the developer."""
+    logging.error(f"Exception while handling an update: {context.error}", exc_info=True)
 
 def main():
     if not TELEGRAM_TOKEN:
