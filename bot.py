@@ -7,6 +7,10 @@ from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, Messa
 from config import TELEGRAM_TOKEN
 import datetime
 
+# Handlers will be imported here
+from storage import get_pending_scheduled_posts, update_post
+from handlers.admin import send_scheduled_post_job, execute_scheduled_post
+
 # Robust Health Check Server for Render/UptimeRobot
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
