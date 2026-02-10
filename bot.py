@@ -17,8 +17,9 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.end_headers()
     
     def log_message(self, format, *args):
-        # Suppress log noise from frequent uptime checks
-        pass
+        # Log health checks to debug UptimeRobot connection
+        if "HealthCheck" not in format:
+             print(f"Health Check PING: {self.client_address[0]}", flush=True)
 
 def start_dummy_server():
     try:
@@ -30,126 +31,53 @@ def start_dummy_server():
     except Exception as e:
         print(f"FATAL: Health Check Server Failed: {e}", flush=True)
         os._exit(1)
-    except Exception as e:
-        print(f"FATAL: Dummy Server Failed: {e}", flush=True)
-        # We might want to exit if port binding fails, as Render will kill us anyway
-        # But maybe the main bot can still run? 
-        # No, Render requires the port to be open.
-        os._exit(1)
-
-from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters, CallbackQueryHandler, PicklePersistence
-from config import TELEGRAM_TOKEN
-import datetime
-
-# Handlers will be imported here
-# from handlers import admin, user
-from storage import get_pending_scheduled_posts, update_post
-from handlers.admin import send_scheduled_post_job, execute_scheduled_post
-
-
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Command to start the bot."""
-    await update.message.reply_text("Bot is running! 🚀")
-
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Log the error and send a telegram message to notify the developer."""
-    logging.error(f"Exception while handling an update: {context.error}", exc_info=True)
-
-async def restore_scheduled_jobs(context: ContextTypes.DEFAULT_TYPE):
-    """Restore pending jobs from database on startup and watchdog."""
-    posts = get_pending_scheduled_posts()
-    count = 0
-    now = datetime.datetime.now().timestamp()
-    
-    for pid, data in posts:
-        # Check if actually scheduled
-        if not data.get("is_scheduled"):
-            continue
-            
-        scheduled_for = data.get("scheduled_for")
-        if not scheduled_for:
-            continue
-            
-        target_chat_id = data.get("target_chat_id")
-        preview_text = data.get("channel_preview_text")
-        
-        if not target_chat_id or not preview_text:
-            logging.warning(f"Post #{pid} missing schedule data (chat_id or text). Skipping.")
-            continue
-            
-        # Calculate delay
-        delay = scheduled_for - now
-        
-        # Check if already scheduled in JobQueue to avoid duplicates
-        existing_jobs = context.job_queue.get_jobs_by_name(f"sched_{pid}")
-        if existing_jobs:
-            continue
-
-        # If passed?
-        if delay < 0:
-            logging.warning(f"Post #{pid} schedule time passed ({delay}s ago). Attempting to send immediately...")
-            # Execute Immediately
-            success = await execute_scheduled_post(context, str(pid), target_chat_id, preview_text)
-            if success:
-                 count += 1
-            else:
-                 logging.error(f"Failed to recover missed post #{pid}")
-            continue
-            
-        # Re-schedule
-        context.job_queue.run_once(
-            send_scheduled_post_job, 
-            delay,
-            chat_id=target_chat_id,
-            name=f"sched_{pid}",
-            data={
-                "chat_id": target_chat_id,
-                "text": preview_text,
-                "post_id": str(pid)
-            }
-        )
-        count += 1
-        
-    if count > 0:
-        logging.info(f"🔄 Restored/Recovered {count} scheduled posts.")
-
-async def schedule_watchdog(context: ContextTypes.DEFAULT_TYPE):
-    """Periodic check for missed schedules."""
-    await restore_scheduled_jobs(context)
 
 async def auto_backup_job(context: ContextTypes.DEFAULT_TYPE):
-    """Send database backup to admin automatically."""
-    from config import ADMIN_ID
+    """Send database backup to admin automatically and optionally forward to a channel."""
+    from config import ADMIN_ID, BACKUP_CHANNEL_ID
     from storage import DB_FILE
     import os
-    
-    if not ADMIN_ID or ADMIN_ID == 0:
-        logging.warning("Auto-backup skipped: ADMIN_ID not configured")
-        return
     
     if not os.path.exists(DB_FILE):
         logging.warning(f"Auto-backup skipped: {DB_FILE} not found")
         return
     
-    try:
-        await context.bot.send_document(
-            chat_id=ADMIN_ID,
-            document=open(DB_FILE, 'rb'),
-            caption=f"🔄 **Auto-Backup**\n\n"
-                    f"📅 {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                    f"💾 Your database has been backed up automatically.\n\n"
-                    f"_Keep this file safe to restore your data!_",
-            parse_mode="Markdown"
-        )
-        logging.info("✅ Auto-backup sent to admin successfully")
-    except Exception as e:
-        logging.error(f"❌ Auto-backup failed: {e}")
+    backup_sent = False
+    
+    # Send to Admin
+    if ADMIN_ID and ADMIN_ID != 0:
+        try:
+            await context.bot.send_document(
+                chat_id=ADMIN_ID,
+                document=open(DB_FILE, 'rb'),
+                caption=f"🔄 **Auto-Backup (Admin)**\n\n"
+                        f"📅 {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                        f"💾 Database Backup",
+                parse_mode="Markdown"
+            )
+            logging.info("✅ Auto-backup sent to admin successfully")
+            backup_sent = True
+        except Exception as e:
+            logging.error(f"❌ Auto-backup to Admin failed: {e}")
+            
+    # Forward to Channel
+    if BACKUP_CHANNEL_ID:
+        try:
+            await context.bot.send_document(
+                chat_id=BACKUP_CHANNEL_ID,
+                document=open(DB_FILE, 'rb'),
+                caption=f"🔄 **Auto-Backup (Archive)**\n\n"
+                        f"📅 {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                        f"💾 Partial/Full Dump",
+                parse_mode="Markdown"
+            )
+            logging.info(f"✅ Auto-backup forwarded to channel {BACKUP_CHANNEL_ID}")
+            backup_sent = True
+        except Exception as e:
+            logging.error(f"❌ Auto-backup to Channel failed: {e}")
+
+    if not backup_sent:
+        logging.warning("Auto-backup generated but no destination configured (Admin or Channel missing)")
 
 
 def main():
