@@ -2,6 +2,10 @@ import logging
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters, CallbackQueryHandler, PicklePersistence
+from config import TELEGRAM_TOKEN
+import datetime
 
 # Robust Health Check Server for Render/UptimeRobot
 class HealthCheckHandler(BaseHTTPRequestHandler):
