@@ -36,6 +36,68 @@ def start_dummy_server():
         print(f"FATAL: Health Check Server Failed: {e}", flush=True)
         os._exit(1)
 
+async def restore_scheduled_jobs(context: ContextTypes.DEFAULT_TYPE):
+    """Restore pending jobs from database on startup and watchdog."""
+    posts = get_pending_scheduled_posts()
+    count = 0
+    now = datetime.datetime.now().timestamp()
+    
+    for pid, data in posts:
+        # Check if actually scheduled
+        if not data.get("is_scheduled"):
+            continue
+            
+        scheduled_for = data.get("scheduled_for")
+        if not scheduled_for:
+            continue
+            
+        target_chat_id = data.get("target_chat_id")
+        preview_text = data.get("channel_preview_text")
+        
+        if not target_chat_id or not preview_text:
+            logging.warning(f"Post #{pid} missing schedule data (chat_id or text). Skipping.")
+            continue
+            
+        # Calculate delay
+        delay = scheduled_for - now
+        
+        # Check if already scheduled in JobQueue to avoid duplicates
+        existing_jobs = context.job_queue.get_jobs_by_name(f"sched_{pid}")
+        if existing_jobs:
+            continue
+
+        # If passed?
+        if delay < 0:
+            logging.warning(f"Post #{pid} schedule time passed ({delay}s ago). Attempting to send immediately...")
+            # Execute Immediately
+            success = await execute_scheduled_post(context, str(pid), target_chat_id, preview_text)
+            if success:
+                 count += 1
+            else:
+                 logging.error(f"Failed to recover missed post #{pid}")
+            continue
+            
+        # Re-schedule
+        context.job_queue.run_once(
+            send_scheduled_post_job, 
+            delay,
+            chat_id=target_chat_id,
+            name=f"sched_{pid}",
+            data={
+                "chat_id": target_chat_id,
+                "text": preview_text,
+                "post_id": str(pid)
+            }
+        )
+        count += 1
+        
+    if count > 0:
+        logging.info(f"🔄 Restored/Recovered {count} scheduled posts.")
+
+async def schedule_watchdog(context: ContextTypes.DEFAULT_TYPE):
+    """Periodic check for missed schedules."""
+    await restore_scheduled_jobs(context)
+
 async def auto_backup_job(context: ContextTypes.DEFAULT_TYPE):
     """Send database backup to admin automatically and optionally forward to a channel."""
     from config import ADMIN_ID, BACKUP_CHANNEL_ID
