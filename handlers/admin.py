@@ -1467,12 +1467,13 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if data.startswith("mang_rename_"):
         name = data.replace("mang_rename_", "")
         context.user_data['rename_image_old_name'] = name
+        print(f"[DEBUG] Rename requested for: {name}, transitioning to MC_RENAME_IMAGE={MC_RENAME_IMAGE}")
         
         await query.edit_message_text(
             f"✏️ **Rename Image**\n\n"
             f"Current Name: `{name}`\n"
             "Enter the new name:",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=f"mang_view_{name}")]], resize_keyboard=True),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=f"mang_cancel_rename")]]),
             parse_mode=ParseMode.MARKDOWN
         )
         return MC_RENAME_IMAGE
@@ -1480,6 +1481,7 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if data.startswith("mang_update_"):
         name = data.replace("mang_update_", "")
         context.user_data['update_image_name'] = name
+        print(f"[DEBUG] Update requested for: {name}, transitioning to MC_UPDATE_IMAGE_CONTENT={MC_UPDATE_IMAGE_CONTENT}")
         
         # Find current text
         images = get_news_images()
@@ -1491,7 +1493,7 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             f"**Current Text**:\n`{current_text}`\n\n"
             "Please send the **New Photo** (with optional caption) OR just **New Text** to update this entry.\n"
             "_(If you send a Photo without caption, existing text will be kept)_",
-             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=f"mang_view_{name}")]], resize_keyboard=True),
+             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=f"mang_cancel_update")]]),
              parse_mode=ParseMode.MARKDOWN
         )
         return MC_UPDATE_IMAGE_CONTENT
@@ -1499,23 +1501,26 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return MC_MANAGE_IMAGES
 
 async def mc_rename_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"[DEBUG] mc_rename_input called! callback_query={update.callback_query is not None}, message={update.message is not None}")
     # Check for callback cancel
     if update.callback_query:
         query = update.callback_query
         await query.answer()
-        name = context.user_data.get('rename_image_old_name')
-        # Go back to dashboard directly (don't try to set read-only callback_query.data)
+        print(f"[DEBUG] Rename cancel callback: {query.data}")
+        # Go back to dashboard directly
         return await mc_manage_images_dashboard(update, context)
 
     text = update.message.text
     old_name = context.user_data.get('rename_image_old_name')
     new_name = text.strip()
+    print(f"[DEBUG] Rename: old_name={old_name}, new_name={new_name}")
     
     if not new_name:
         await update.message.reply_text("⚠ Name cannot be empty.")
         return MC_RENAME_IMAGE
         
     success = rename_news_image(old_name, new_name)
+    print(f"[DEBUG] Rename result: {success}")
     
     if success:
         await update.message.reply_text(f"✅ Renamed to **{new_name}**.", parse_mode=ParseMode.MARKDOWN)
@@ -1526,17 +1531,21 @@ async def mc_rename_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await mc_manage_images_dashboard(update, context)
 
 async def mc_update_image_content_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"[DEBUG] mc_update_image_content_handler called! callback_query={update.callback_query is not None}, message={update.message is not None}")
     # Check callback cancel
     if update.callback_query:
         query = update.callback_query
         await query.answer()
-        # Go back to dashboard directly (don't try to set read-only callback_query.data)
+        print(f"[DEBUG] Update cancel callback: {query.data}")
+        # Go back to dashboard directly
         return await mc_manage_images_dashboard(update, context)
 
     name = context.user_data.get('update_image_name')
     if not name:
+        print(f"[DEBUG] No update_image_name in context!")
         return await mc_manage_images_dashboard(update, context)
-        
+    
+    print(f"[DEBUG] Updating image: {name}")
     text = update.message.text
     photo = update.message.photo
     
