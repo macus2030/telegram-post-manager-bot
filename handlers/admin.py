@@ -1307,38 +1307,38 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     data = query.data
     
-    if data == "mang_back":
-        # Return to Input News
-        # We need to re-render the input news message.
-        # Can we call mc_input_link? No, that expects text input.
-        # We should manually show the UI of mc_input_link's END state.
-        
-        # Or better: call a helper function that renders "Enter News" UI.
-        # Refactor mc_input_link logic?
-        # Let's just copy the UI rendering logic.
-        
-        # Saved Images
-        saved_images = get_news_images()
-        kb = []
-        row = []
-        for img in saved_images:
-            row.append(InlineKeyboardButton(f"🖼️ {img['name']}", callback_data=f"img_select_{img['name']}"))
-            if len(row) == 2:
-                kb.append(row)
-                row = []
-        if row: kb.append(row)
-        
-        kb.append([InlineKeyboardButton("🔄 Use Last News", callback_data="img_use_last"), InlineKeyboardButton("⚙️ Manage Images", callback_data="img_manage")])
-        kb.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
-        
-        await query.edit_message_text(
-            "📰 **Enter News/Content**\n\n"
-            "Please send the text content (News, ignoring text, etc.) to place at the top.\n"
-            "Or choose a saved image:",
-            reply_markup=InlineKeyboardMarkup(kb),
-            parse_mode=ParseMode.MARKDOWN
-        )
-        return MC_INPUT_NEWS
+    # Handle "Back List" and "img_manage" — return to image list dashboard
+    if data in ("mang_back", "img_manage"):
+        # Return to Input News from mang_back, or dashboard from img_manage
+        if data == "mang_back":
+            saved_images = get_news_images()
+            kb = []
+            row = []
+            for img in saved_images:
+                row.append(InlineKeyboardButton(f"🖼️ {img['name']}", callback_data=f"img_select_{img['name']}"))
+                if len(row) == 2:
+                    kb.append(row)
+                    row = []
+            if row: kb.append(row)
+            
+            kb.append([InlineKeyboardButton("🔄 Use Last News", callback_data="img_use_last"), InlineKeyboardButton("⚙️ Manage Images", callback_data="img_manage")])
+            kb.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+            
+            await query.edit_message_text(
+                "📰 **Enter News/Content**\n\n"
+                "Please send the text content (News, ignoring text, etc.) to place at the top.\n"
+                "Or choose a saved image:",
+                reply_markup=InlineKeyboardMarkup(kb),
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return MC_INPUT_NEWS
+        else:
+            # img_manage -> go to dashboard
+            return await mc_manage_images_dashboard(update, context)
+    
+    # Handle "dummy" buttons (preview simulation buttons that don't do anything)
+    if data == "dummy":
+        return MC_MANAGE_IMAGES
 
     if data.startswith("mang_view_"):
         name = data.replace("mang_view_", "")
@@ -1365,7 +1365,22 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             [InlineKeyboardButton("🔙 Back List", callback_data="img_manage")]
         ]
         
-        await query.edit_message_text(details, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
+        # If this is called from a photo message (e.g. Close Preview), we can't edit_message_text on a photo.
+        # So delete the old message and send a new one.
+        try:
+            await query.edit_message_text(details, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
+        except Exception:
+            # Likely a photo message — delete it and send new text message
+            try:
+                await query.delete_message()
+            except Exception:
+                pass
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=details,
+                reply_markup=InlineKeyboardMarkup(kb),
+                parse_mode=ParseMode.MARKDOWN
+            )
         return MC_MANAGE_IMAGES
         
     if data.startswith("mang_preview_"):
@@ -1393,15 +1408,12 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                  # 3. Format
                  preview_text = template.format(**variables)
                  
-                 # 4. Buttons (Simulation)
+                 # 4. Buttons
                  kb = [
-                     [InlineKeyboardButton("🚀 Post to Channel", callback_data="dummy"), InlineKeyboardButton("⏰ Schedule", callback_data="dummy")],
-                     [InlineKeyboardButton("👁️ Preview as Channel", callback_data="dummy"), InlineKeyboardButton("📋 Copy Content", callback_data="dummy")],
-                     [InlineKeyboardButton("❌ Close Preview", callback_data=f"mang_view_{name}")]
+                     [InlineKeyboardButton("❌ Close Preview", callback_data=f"mang_close_preview_{name}")]
                  ]
                  
-                 # 5. Send
-                 # Use send_photo because likely to be photo post
+                 # 5. Send as photo post
                  await context.bot.send_photo(
                      chat_id=update.effective_chat.id,
                      photo=found['file_id'],
@@ -1412,6 +1424,38 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
              except Exception as e:
                  await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ Preview generation failed: {e}")
                  
+        return MC_MANAGE_IMAGES
+
+    if data.startswith("mang_close_preview_"):
+        # Close Preview: delete the photo preview message and show image details again
+        name = data.replace("mang_close_preview_", "")
+        try:
+            await query.delete_message()
+        except Exception:
+            pass
+        # Show image detail view as a new message
+        images = get_news_images()
+        found = next((img for img in images if img['name'] == name), None)
+        if found:
+            text_content = found.get('text', '*(No Text)*')
+            details = (
+                f"🖼️ **Image Details**\n\n"
+                f"**Name**: `{name}`\n"
+                f"**Saved Text**: {html.escape(text_content)}\n"
+            )
+            kb = [
+                [InlineKeyboardButton("👁 Preview", callback_data=f"mang_preview_{name}"), InlineKeyboardButton("🔄 Update Content", callback_data=f"mang_update_{name}")],
+                [InlineKeyboardButton("✏️ Rename", callback_data=f"mang_rename_{name}"), InlineKeyboardButton("🗑️ Delete", callback_data=f"mang_delete_{name}")],
+                [InlineKeyboardButton("🔙 Back List", callback_data="img_manage")]
+            ]
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=details,
+                reply_markup=InlineKeyboardMarkup(kb),
+                parse_mode=ParseMode.MARKDOWN
+            )
+        else:
+            return await mc_manage_images_dashboard(update, context)
         return MC_MANAGE_IMAGES
 
     if data.startswith("mang_delete_"):
@@ -1457,11 +1501,11 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def mc_rename_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check for callback cancel
     if update.callback_query:
-        # Cancel pressed
+        query = update.callback_query
+        await query.answer()
         name = context.user_data.get('rename_image_old_name')
-        # Redirect to view
-        update.callback_query.data = f"mang_view_{name}"
-        return await mc_manage_callback(update, context)
+        # Go back to dashboard directly (don't try to set read-only callback_query.data)
+        return await mc_manage_images_dashboard(update, context)
 
     text = update.message.text
     old_name = context.user_data.get('rename_image_old_name')
@@ -1473,34 +1517,21 @@ async def mc_rename_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     success = rename_news_image(old_name, new_name)
     
-    # We need to show the View UI again.
-    # But since we are in MessageHandler (text input), we should send a new message.
-    
     if success:
         await update.message.reply_text(f"✅ Renamed to **{new_name}**.", parse_mode=ParseMode.MARKDOWN)
-        # Update context name for view
-        name_to_view = new_name
     else:
-        await update.message.reply_text(f"❌ Failed. Name might exist.", parse_mode=ParseMode.MARKDOWN)
-        name_to_view = old_name
+        await update.message.reply_text(f"❌ Failed. Name might already exist.", parse_mode=ParseMode.MARKDOWN)
         
-    # Simulate routing to View
-    # Construct a fake callback query? Or just call a helper?
-    # Helper is better.
-    # Let's call a helper that renders the view.
-    # But mc_manage_callback handles rendering logic inside interactions.
-    # I should extract `render_image_details`?
-    # For now, let's just trigger the dashboard behavior.
-    
-    # Trigger dashboard
+    # Return to dashboard
     return await mc_manage_images_dashboard(update, context)
 
 async def mc_update_image_content_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check callback cancel
     if update.callback_query:
-        name = context.user_data.get('update_image_name')
-        update.callback_query.data = f"mang_view_{name}"
-        return await mc_manage_callback(update, context)
+        query = update.callback_query
+        await query.answer()
+        # Go back to dashboard directly (don't try to set read-only callback_query.data)
+        return await mc_manage_images_dashboard(update, context)
 
     name = context.user_data.get('update_image_name')
     if not name:
@@ -1548,6 +1579,7 @@ async def mc_update_image_content_handler(update: Update, context: ContextTypes.
     return await mc_manage_images_dashboard(update, context)
 
 async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
     try:
         # Prepare variables
         data = context.user_data
@@ -1555,7 +1587,7 @@ async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
              hl = get_help_link()
         except Exception as e:
-             await update.message.reply_text(f"❌ Error getting help link: {e}")
+             await context.bot.send_message(chat_id, f"❌ Error getting help link: {e}")
              return MC_INPUT_NEWS
 
         variables = {
@@ -1569,17 +1601,16 @@ async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             template = get_main_template()
         except Exception as e:
-            await update.message.reply_text(f"❌ Error getting template: {e}")
+            await context.bot.send_message(chat_id, f"❌ Error getting template: {e}")
             return MC_INPUT_NEWS
         
         # Validation
         missing = []
         import string
-        # Get field names from template
         try:
             required_keys = [t[1] for t in string.Formatter().parse(template) if t[1] is not None]
         except Exception as e:
-             await update.message.reply_text(f"❌ Error parsing template: {e}")
+             await context.bot.send_message(chat_id, f"❌ Error parsing template: {e}")
              return MC_INPUT_NEWS
         
         for key in required_keys:
@@ -1587,7 +1618,8 @@ async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 missing.append(key)
                 
         if missing:
-            await update.message.reply_text(
+            await context.bot.send_message(
+                chat_id,
                 f"❌ Template Error: The following placeholders are missing data: {', '.join(missing)}\n"
                 "Please check your template or inputs."
             )
@@ -1597,10 +1629,10 @@ async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
             preview_text = template.format(**variables)
             context.user_data['mc_preview_text'] = preview_text
         except Exception as e:
-            await update.message.reply_text(f"❌ Formatting Error: {e}")
+            await context.bot.send_message(chat_id, f"❌ Formatting Error: {e}")
             return MC_INPUT_NEWS
     
-        # Show Buttons
+        # Show Buttons (ReplyKeyboard for actions)
         kb = [
             ["🚀 Post to Channel", "⏰ Schedule"],
             ["👁️ Preview as Channel", "📋 Copy Content"],
@@ -1613,43 +1645,42 @@ async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if image_id:
                 if len(preview_text) > 1000:
                     # Too long for caption, send separately
-                    await update.message.reply_photo(photo=image_id)
-                    await update.message.reply_text(
+                    await context.bot.send_photo(chat_id=chat_id, photo=image_id)
+                    await context.bot.send_message(
+                        chat_id,
                         f"📄 **Preview** (Text below image due to length):\n\n{preview_text}\n\nSelect an action:",
                         reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
                         parse_mode=ParseMode.HTML
                     )
                 else:
                     try:
-                        await update.message.reply_photo(
+                        await context.bot.send_photo(
+                            chat_id=chat_id,
                             photo=image_id,
                             caption=f"📄 **Preview**:\n\n{preview_text}\n\nSelect an action:",
                             reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
                             parse_mode=ParseMode.HTML
                         )
                     except Exception as e:
-                         # Fallback if maybe calculated length was ok but HTML tags made it long
-                         await update.message.reply_photo(photo=image_id)
-                         await update.message.reply_text( f"📄 **Preview** (Fallback):\n\n{preview_text}\n\nSelect an action:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True), parse_mode=ParseMode.HTML)
+                         await context.bot.send_photo(chat_id=chat_id, photo=image_id)
+                         await context.bot.send_message(chat_id, f"📄 **Preview** (Fallback):\n\n{preview_text}\n\nSelect an action:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True), parse_mode=ParseMode.HTML)
             else:
-                await update.message.reply_text(
+                await context.bot.send_message(
+                    chat_id,
                     f"📄 **Preview**:\n\n{preview_text}\n\nSelect an action:",
                     reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
                     parse_mode=ParseMode.HTML
                 )
         except Exception as e:
-            await update.message.reply_text(f"❌ Preview Error (HTML): {e}\n\nRaw Text:\n{preview_text}")
+            await context.bot.send_message(chat_id, f"❌ Preview Error (HTML): {e}\n\nRaw Text:\n{preview_text}")
             return MC_INPUT_NEWS
         return MC_CONFIRM
 
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
-        # print(f"Error in mc_render_preview: {e}\n{tb}")
-        # Send TB to user (Debug only)
-        # Truncate if too long
         if len(tb) > 4000: tb = tb[:4000]
-        await update.message.reply_text(f"❌ unexpected error in preview: {e}\n\nTraceback:\n`{tb}`", parse_mode=ParseMode.MARKDOWN)
+        await context.bot.send_message(chat_id, f"❌ unexpected error in preview: {e}\n\nTraceback:\n`{tb}`", parse_mode=ParseMode.MARKDOWN)
         return MC_INPUT_NEWS
 
 async def mc_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
