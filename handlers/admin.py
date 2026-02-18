@@ -3,7 +3,7 @@ import html
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 from telegram.constants import ParseMode, ChatAction
 from config import ADMIN_ID, MAIN_CHANNEL_ID
-from storage import add_post, save_template, get_templates, get_message_template, get_help_link, get_post, get_main_template, update_post, get_latest_post_id, get_last_news, save_last_news, get_auto_delete_timer
+from storage import add_post, save_template, get_templates, get_message_template, get_help_link, get_post, get_main_template, update_post, get_latest_post_id, get_last_news, save_last_news, get_auto_delete_timer, get_news_images, save_news_image, delete_news_image, rename_news_image
 from utils.helpers import send_temp_message, show_loading, escape_markdown_v2, check_admin, validate_link
 import time
 import logging
@@ -12,7 +12,7 @@ import datetime
 # States
 SELECT_TYPE, UPLOAD_FILE, INPUT_LINK, EDIT_CAPTION, INPUT_PASSWORD, SELECT_CATEGORY, CONFIRM, INPUT_TIMER = range(8)
 # Main Channel Flow States
-MC_INPUT_ID, MC_INPUT_LINK, MC_INPUT_NEWS, MC_CONFIRM, MC_SCHEDULE, MC_SCHED_DATE, MC_SCHED_TIME, MC_SCHEDULE_CONFIRM = range(6, 14)
+MC_INPUT_ID, MC_INPUT_LINK, MC_INPUT_NEWS, MC_CONFIRM, MC_SCHEDULE, MC_SCHED_DATE, MC_SCHED_TIME, MC_SCHEDULE_CONFIRM, MC_MANAGE_IMAGES, MC_RENAME_IMAGE = range(6, 16)
 
 # Keyboards
 DASHBOARD_KB = [
@@ -1108,33 +1108,75 @@ async def mc_input_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     context.user_data['mc_short_link'] = short_link
     
+    # Dynamic Keyboard for Images
+    kb = []
+    
+    # Saved Images
+    saved_images = get_news_images()
+    row = []
+    for img in saved_images:
+        row.append(f"🖼️ {img['name']}")
+        if len(row) == 2:
+            kb.append(row)
+            row = []
+    if row: kb.append(row)
+    
+    # Standard Buttons
+    kb.append(["🔄 Use Last News", "✏️ Edit Images"])
+    kb.append(["❌ Cancel"])
+    
     await update.message.reply_text(
         "📰 **Enter News/Content**\n\n"
-        "Please send the text content (News, ignoring text, etc.) to place at the top.",
-        reply_markup=ReplyKeyboardMarkup([["🔄 Use Last News"], ["❌ Cancel"]], resize_keyboard=True, one_time_keyboard=True),
+        "Please send the text content (News, ignoring text, etc.) to place at the top.\n"
+        "Or choose a saved image:",
+        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True, one_time_keyboard=True),
         parse_mode=ParseMode.MARKDOWN
     )
     return MC_INPUT_NEWS
 
 async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        # Debug
-        # await update.message.reply_text("Debug: Processing news...") # Temporary
-        
         text = update.message.text
         photo = update.message.photo
         
         if text == "❌ Cancel": return await cancel(update, context)
         
+        if text == "✏️ Edit Images":
+            return await start_manage_images(update, context)
+            
         news_text = text
         image_id = None
         
-        if photo:
-            # Photo input
-            image_id = photo[-1].file_id
-            news_text = update.message.caption or "" # Caption is the news text
+        # Check if user selected a saved image
+        if text and text.startswith("🖼️ "):
+            image_name = text.replace("🖼️ ", "")
+            images = get_news_images()
+            for img in images:
+                if img['name'] == image_name:
+                    image_id = img['file_id']
+                    news_text = context.user_data.get('temp_news_text', "") # Use previous text if any? Or blank?
+                    # Actually, if they click image, maybe they want JUST image?
+                    # Or we should have asked for text first?
+                    # The prompt said "Enter News/Content".
+                    # If they click image, we assume no text?
+                    news_text = ""
+                    await update.message.reply_text(f"✅ Selected Image: **{image_name}**", parse_mode=ParseMode.MARKDOWN)
+                    break
+            
+            if not image_id:
+                await update.message.reply_text("⚠ Image not found (maybe deleted?). Please try again.")
+                return MC_INPUT_NEWS
         
-        if text == "🔄 Use Last News":
+        elif photo:
+            # Photo input - Auto Save
+            image_id = photo[-1].file_id
+            news_text = update.message.caption or ""
+            
+            # Auto Save
+            saved_name = save_news_image(image_id)
+            await update.message.reply_text(f"✅ Image saved as **{saved_name}** for future use.", parse_mode=ParseMode.MARKDOWN)
+        
+        elif text == "🔄 Use Last News":
             last_data = get_last_news()
             if last_data and (last_data.get('text') or last_data.get('image_id')):
                 news_text = last_data.get('text') or ""
@@ -1147,45 +1189,110 @@ async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                  await update.message.reply_text("⚠ No previous news found. Please enter text.")
                  return MC_INPUT_NEWS
+                 
+        else:
+             # Just text provided
+             pass
         
         if not news_text and not image_id:
              await update.message.reply_text("⚠ Please enter text or send an image.")
              return MC_INPUT_NEWS
         
-        # Save Last News (if text only or caption exists)
-        try:
-            save_last_news(news_text, image_id)
-        except Exception as e:
-            print(f"Error saving last news: {e}")
-        
-        # Auto-apply strikethrough as requested
-        # escaped_text = html.escape(news_text) # Don't escape yet, let template handle it? No, template expects raw? 
-        # Actually template uses {news} variable. If user sends HTML characters, they might break formatting if we don't escape.
-        # But if we escape, user can't use bold/italic.
-        # Let's assume input is plain text and we just strike it through as per requirement?
-        # WAIT: The requirement "Auto-apply strikethrough" line 1129 in original code:
-        # context.user_data['mc_news'] = f"<s>{escaped_text}</s>"
-        # I should keep this behavior.
+        # Save Last News
+        save_last_news(news_text, image_id)
         
         if news_text:
             escaped_text = html.escape(news_text)
             context.user_data['mc_news'] = f"<s>{escaped_text}</s>"
         else:
-            context.user_data['mc_news'] = "" # No text, just image? Template might require text placeholder... 
-            # If template has {news}, and we provide empty string, it might look weird if consistent text is expected.
-            # But maybe image posts don't need news text? 
-            # Let's ensure mc_news is capable of being displayed.
+            context.user_data['mc_news'] = ""
             
         if image_id:
              context.user_data['mc_news_image_id'] = image_id
         else:
-             context.user_data.pop('mc_news_image_id', None) # Clear previous if any
+             context.user_data.pop('mc_news_image_id', None)
              
         return await mc_render_preview(update, context)
     except Exception as e:
         print(f"Error in mc_input_news: {e}")
         await update.message.reply_text(f"❌ Error processing input: {e}")
         return MC_INPUT_NEWS
+
+async def start_manage_images(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    images = get_news_images()
+    
+    if not images:
+        await update.message.reply_text("⚠ No saved images found.", parse_mode=ParseMode.MARKDOWN)
+        # Return to news input
+        await update.message.reply_text(
+             "📰 **Enter News/Content**",
+             reply_markup=ReplyKeyboardMarkup([["🔄 Use Last News"], ["❌ Cancel"]], resize_keyboard=True, one_time_keyboard=True)
+        )
+        return MC_INPUT_NEWS
+        
+    # Show list of images to Manage
+    kb = []
+    for img in images:
+        kb.append([f"✏️ Rename {img['name']}", f"🗑️ Delete {img['name']}"])
+    
+    kb.append(["🔙 Back"])
+    
+    await update.message.reply_text(
+        "⚙️ **Manage Saved Images**\n\n"
+        "Select an image to Rename or Delete:",
+        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
+        parse_mode=ParseMode.MARKDOWN
+    )
+    return MC_MANAGE_IMAGES
+
+async def mc_manage_images(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    
+    if text == "🔙 Back":
+        # Return to Link Input or just re-trigger MC_INPUT_NEWS UI?
+        # Re-triggering MC_INPUT_LINK's end flow is best to show buttons again.
+        return await mc_input_link(update, context) # Reuse logic? No, mc_input_link expects text input.
+        # We should just show the UI from mc_input_link.
+    
+    if text.startswith("🗑️ Delete "):
+        name = text.replace("🗑️ Delete ", "")
+        delete_news_image(name)
+        await update.message.reply_text(f"✅ Deleted **{name}**", parse_mode=ParseMode.MARKDOWN)
+        return await start_manage_images(update, context)
+        
+    if text.startswith("✏️ Rename "):
+        name = text.replace("✏️ Rename ", "")
+        context.user_data['rename_image_old_name'] = name
+        await update.message.reply_text(
+            f"✏️ Enter new name for **{name}**:",
+            reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return MC_RENAME_IMAGE
+        
+    # Fallback
+    await update.message.reply_text("⚠ Invalid option.")
+    return await start_manage_images(update, context)
+
+async def mc_rename_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text == "❌ Cancel":
+        return await start_manage_images(update, context)
+        
+    old_name = context.user_data.get('rename_image_old_name')
+    new_name = text.strip()
+    
+    if not new_name:
+        await update.message.reply_text("⚠ Name cannot be empty.")
+        return MC_RENAME_IMAGE
+        
+    success = rename_news_image(old_name, new_name)
+    if success:
+        await update.message.reply_text(f"✅ Renamed to **{new_name}**", parse_mode=ParseMode.MARKDOWN)
+    else:
+        await update.message.reply_text(f"❌ Failed to rename. Name might already exist.", parse_mode=ParseMode.MARKDOWN)
+        
+    return await start_manage_images(update, context)
 
 async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -1767,7 +1874,9 @@ main_channel_conv = ConversationHandler(
         MC_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_action)],
         MC_SCHED_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_sched_date_input)],
         MC_SCHED_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_sched_time_input)],
-        MC_SCHEDULE_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_schedule_confirm)]
+        MC_SCHEDULE_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_schedule_confirm)],
+        MC_MANAGE_IMAGES: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_manage_images)],
+        MC_RENAME_IMAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_rename_input)]
     },
     fallbacks=[
         MessageHandler(filters.Regex(MENU_REGEX), global_fallback),

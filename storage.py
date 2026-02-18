@@ -446,6 +446,91 @@ def save_last_news(content: str, image_id: str = None):
         conn.commit()
         conn.close()
 
+def get_news_images() -> List[Dict[str, str]]:
+    """Returns list of dicts: {'name': 'Name', 'file_id': 'FileID'}"""
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT value FROM config WHERE key = 'news_images'")
+        row = c.fetchone()
+        conn.close()
+        
+    if row:
+        try:
+            return json.loads(row[0])
+        except:
+            pass
+    return []
+
+def save_news_image(file_id: str, name: str = None) -> str:
+    """Saves a news image. Returns the name used."""
+    images = get_news_images()
+    
+    # Check if file_id already exists to avoid duplicates
+    for img in images:
+        if img['file_id'] == file_id:
+            return img['name']
+
+    # Generate name if not provided
+    if not name:
+        # Check for existing "Image X" names to find next number
+        import re
+        max_num = 0
+        for img in images:
+            match = re.match(r"Image (\d+)", img['name'])
+            if match:
+                num = int(match.group(1))
+                if num > max_num: max_num = num
+        name = f"Image {max_num + 1}"
+            
+    # Add new
+    images.append({"name": name, "file_id": file_id})
+    
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ("news_images", json.dumps(images, ensure_ascii=False)))
+        conn.commit()
+        conn.close()
+        
+    return name
+
+def delete_news_image(name: str):
+    images = get_news_images()
+    new_images = [img for img in images if img['name'] != name]
+    
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ("news_images", json.dumps(new_images, ensure_ascii=False)))
+        conn.commit()
+        conn.close()
+
+def rename_news_image(old_name: str, new_name: str) -> bool:
+    images = get_news_images()
+    found = False
+    
+    # Check if new_name exists
+    for img in images:
+        if img['name'] == new_name:
+            return False # Collision
+            
+    for img in images:
+        if img['name'] == old_name:
+            img['name'] = new_name
+            found = True
+            break
+            
+    if found:
+        with lock:
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ("news_images", json.dumps(images, ensure_ascii=False)))
+            conn.commit()
+            conn.close()
+            
+    return found
+
 def get_auto_delete_timer() -> int:
     """Returns global auto-delete timer in SECONDS."""
     with lock:
