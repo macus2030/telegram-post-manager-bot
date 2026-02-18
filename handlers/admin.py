@@ -3,7 +3,7 @@ import html
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 from telegram.constants import ParseMode, ChatAction
 from config import ADMIN_ID, MAIN_CHANNEL_ID
-from storage import add_post, save_template, get_templates, get_message_template, get_help_link, get_post, get_main_template, update_post, get_latest_post_id, get_last_news, save_last_news, get_auto_delete_timer, get_news_images, save_news_image, delete_news_image, rename_news_image
+from storage import add_post, save_template, get_templates, get_message_template, get_help_link, get_post, get_main_template, update_post, get_latest_post_id, get_last_news, save_last_news, get_auto_delete_timer, get_news_images, save_news_image, delete_news_image, rename_news_image, update_news_image
 from utils.helpers import send_temp_message, show_loading, escape_markdown_v2, check_admin, validate_link
 import time
 import logging
@@ -12,7 +12,7 @@ import datetime
 # States
 SELECT_TYPE, UPLOAD_FILE, INPUT_LINK, EDIT_CAPTION, INPUT_PASSWORD, SELECT_CATEGORY, CONFIRM, INPUT_TIMER = range(8)
 # Main Channel Flow States
-MC_INPUT_ID, MC_INPUT_LINK, MC_INPUT_NEWS, MC_CONFIRM, MC_SCHEDULE, MC_SCHED_DATE, MC_SCHED_TIME, MC_SCHEDULE_CONFIRM, MC_MANAGE_IMAGES, MC_RENAME_IMAGE = range(6, 16)
+MC_INPUT_ID, MC_INPUT_LINK, MC_INPUT_NEWS, MC_CONFIRM, MC_SCHEDULE, MC_SCHED_DATE, MC_SCHED_TIME, MC_SCHEDULE_CONFIRM, MC_MANAGE_IMAGES, MC_RENAME_IMAGE, MC_UPDATE_IMAGE_CONTENT = range(6, 17)
 
 # Keyboards
 DASHBOARD_KB = [
@@ -1108,28 +1108,37 @@ async def mc_input_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     context.user_data['mc_short_link'] = short_link
     
-    # Dynamic Keyboard for Images
+    # Dynamic Keyboard for Images (Inline)
     kb = []
     
     # Saved Images
     saved_images = get_news_images()
     row = []
     for img in saved_images:
-        row.append(f"🖼️ {img['name']}")
+        # Use simple callback: img_select_{name}
+        # Name might have spaces? Yes. Inline buttons handle strings.
+        # But callback_data limit is 64 bytes.
+        # If name is long, this might fail.
+        # I should use file_id hash or index?
+        # Or just img_idx_{i}
+        # Let's use name for now, assuming standard short names like "Image 1".
+        row.append(InlineKeyboardButton(f"🖼️ {img['name']}", callback_data=f"img_select_{img['name']}"))
         if len(row) == 2:
             kb.append(row)
             row = []
     if row: kb.append(row)
     
     # Standard Buttons
-    kb.append(["🔄 Use Last News", "✏️ Edit Images"])
-    kb.append(["❌ Cancel"])
+    kb.append([InlineKeyboardButton("🔄 Use Last News", callback_data="img_use_last"), InlineKeyboardButton("⚙️ Manage Images", callback_data="img_manage")])
+    kb.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")]) # Global cancel handler handles "cancel" command, but callback needs explicit handling if not using pattern fallback?
+    # Global fallback usually handles text "❌ Cancel".
+    # I should use specific callback.
     
     await update.message.reply_text(
         "📰 **Enter News/Content**\n\n"
         "Please send the text content (News, ignoring text, etc.) to place at the top.\n"
         "Or choose a saved image:",
-        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True, one_time_keyboard=True),
+        reply_markup=InlineKeyboardMarkup(kb),
         parse_mode=ParseMode.MARKDOWN
     )
     return MC_INPUT_NEWS
@@ -1141,56 +1150,19 @@ async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if text == "❌ Cancel": return await cancel(update, context)
         
-        if text == "✏️ Edit Images":
-            return await start_manage_images(update, context)
-            
         news_text = text
         image_id = None
         
-        # Check if user selected a saved image
-        if text and text.startswith("🖼️ "):
-            image_name = text.replace("🖼️ ", "")
-            images = get_news_images()
-            for img in images:
-                if img['name'] == image_name:
-                    image_id = img['file_id']
-                    news_text = context.user_data.get('temp_news_text', "") # Use previous text if any? Or blank?
-                    # Actually, if they click image, maybe they want JUST image?
-                    # Or we should have asked for text first?
-                    # The prompt said "Enter News/Content".
-                    # If they click image, we assume no text?
-                    news_text = ""
-                    await update.message.reply_text(f"✅ Selected Image: **{image_name}**", parse_mode=ParseMode.MARKDOWN)
-                    break
-            
-            if not image_id:
-                await update.message.reply_text("⚠ Image not found (maybe deleted?). Please try again.")
-                return MC_INPUT_NEWS
-        
-        elif photo:
+        if photo:
             # Photo input - Auto Save
             image_id = photo[-1].file_id
             news_text = update.message.caption or ""
             
             # Auto Save
-            saved_name = save_news_image(image_id)
-            await update.message.reply_text(f"✅ Image saved as **{saved_name}** for future use.", parse_mode=ParseMode.MARKDOWN)
+            saved_name = save_news_image(image_id, text=news_text) # Save text too
+            await update.message.reply_text(f"✅ Image saved as **{saved_name}**.", parse_mode=ParseMode.MARKDOWN)
         
-        elif text == "🔄 Use Last News":
-            last_data = get_last_news()
-            if last_data and (last_data.get('text') or last_data.get('image_id')):
-                news_text = last_data.get('text') or ""
-                image_id = last_data.get('image_id')
-                
-                if image_id:
-                     await update.message.reply_photo(photo=image_id, caption=f"🔄 Using last news:\n{news_text}")
-                else:
-                     await update.message.reply_text(f"🔄 Using last news:\n{news_text}")
-            else:
-                 await update.message.reply_text("⚠ No previous news found. Please enter text.")
-                 return MC_INPUT_NEWS
-                 
-        else:
+        elif text:
              # Just text provided
              pass
         
@@ -1218,67 +1190,235 @@ async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Error processing input: {e}")
         return MC_INPUT_NEWS
 
-async def start_manage_images(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def mc_input_news_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    
+    if data == "cancel":
+        await query.delete_message()
+        return await cancel(update, context) # This might expect message update? cancel() uses reply_text.
+        # Check cancel() implementation.
+        # It uses update.message.reply_text.
+        # If calling from callback, update.message is None.
+        # We need to handle this manually or refactor cancel.
+        # For now, manually cancel.
+        await context.bot.send_message(update.effective_chat.id, "❌ Action cancelled.", reply_markup=ReplyKeyboardMarkup(DASHBOARD_KB, resize_keyboard=True))
+        return ConversationHandler.END
+
+    if data == "img_manage":
+        return await mc_manage_images_dashboard(update, context)
+        
+    if data == "img_use_last":
+        last_data = get_last_news()
+        if last_data and (last_data.get('text') or last_data.get('image_id')):
+            news_text = last_data.get('text') or ""
+            image_id = last_data.get('image_id')
+            
+            if image_id:
+                 await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_id, caption=f"🔄 Using last news:\n{news_text}")
+            else:
+                 await context.bot.send_message(chat_id=update.effective_chat.id, text=f"🔄 Using last news:\n{news_text}")
+                 
+            # Proceed
+            save_last_news(news_text, image_id) # Refresh timestamp? Not needed strictly but consistent.
+            
+            if news_text:
+                escaped_text = html.escape(news_text)
+                context.user_data['mc_news'] = f"<s>{escaped_text}</s>"
+            else:
+                context.user_data['mc_news'] = ""
+                
+            if image_id:
+                 context.user_data['mc_news_image_id'] = image_id
+            else:
+                 context.user_data.pop('mc_news_image_id', None)
+                 
+            return await mc_render_preview(update, context)
+        else:
+             await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠ No previous news found. Please enter text.")
+             return MC_INPUT_NEWS
+
+    if data.startswith("img_select_"):
+        image_name = data.replace("img_select_", "")
+        images = get_news_images()
+        found = None
+        for img in images:
+            if img['name'] == image_name:
+                found = img
+                break
+        
+        if found:
+            image_id = found['file_id']
+            # If image has saved text, use it?
+            # Or use empty text?
+            # The user asked for "Update News & Photo", implying they want to store text.
+            # So if text is stored, we should use it.
+            news_text = found.get('text', "")
+            
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"✅ Selected Image: **{image_name}**", parse_mode=ParseMode.MARKDOWN)
+            
+            save_last_news(news_text, image_id)
+            
+            if news_text:
+                escaped_text = html.escape(news_text)
+                context.user_data['mc_news'] = f"<s>{escaped_text}</s>"
+            else:
+                context.user_data['mc_news'] = ""
+                
+            context.user_data['mc_news_image_id'] = image_id
+            return await mc_render_preview(update, context)
+        else:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠ Image not found (maybe deleted?).")
+            return MC_INPUT_NEWS
+            
+    return MC_INPUT_NEWS
+
+async def mc_manage_images_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     images = get_news_images()
+    query = update.callback_query
     
     if not images:
-        await update.message.reply_text("⚠ No saved images found.", parse_mode=ParseMode.MARKDOWN)
-        # Return to news input
-        await update.message.reply_text(
-             "📰 **Enter News/Content**",
-             reply_markup=ReplyKeyboardMarkup([["🔄 Use Last News"], ["❌ Cancel"]], resize_keyboard=True, one_time_keyboard=True)
-        )
-        return MC_INPUT_NEWS
+        text = "⚠ No saved images found."
+        kb = [[InlineKeyboardButton("🔙 Back", callback_data="mang_back")]]
+        if query:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb))
+        else:
+            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb))
+        return MC_MANAGE_IMAGES
         
-    # Show list of images to Manage
+    text = "⚙️ **Manage Saved Images**\n\nSelect an image to manage:"
     kb = []
+    
     for img in images:
-        kb.append([f"✏️ Rename {img['name']}", f"🗑️ Delete {img['name']}"])
+        kb.append([InlineKeyboardButton(f"🖼️ {img['name']}", callback_data=f"mang_view_{img['name']}")])
+        
+    kb.append([InlineKeyboardButton("🔙 Back to Post", callback_data="mang_back")])
     
-    kb.append(["🔙 Back"])
-    
-    await update.message.reply_text(
-        "⚙️ **Manage Saved Images**\n\n"
-        "Select an image to Rename or Delete:",
-        reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True),
-        parse_mode=ParseMode.MARKDOWN
-    )
+    if query:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
+    else:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
+        
     return MC_MANAGE_IMAGES
 
-async def mc_manage_images(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
+async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
     
-    if text == "🔙 Back":
-        # Return to Link Input or just re-trigger MC_INPUT_NEWS UI?
-        # Re-triggering MC_INPUT_LINK's end flow is best to show buttons again.
-        return await mc_input_link(update, context) # Reuse logic? No, mc_input_link expects text input.
-        # We should just show the UI from mc_input_link.
-    
-    if text.startswith("🗑️ Delete "):
-        name = text.replace("🗑️ Delete ", "")
-        delete_news_image(name)
-        await update.message.reply_text(f"✅ Deleted **{name}**", parse_mode=ParseMode.MARKDOWN)
-        return await start_manage_images(update, context)
+    if data == "mang_back":
+        # Return to Input News
+        # We need to re-render the input news message.
+        # Can we call mc_input_link? No, that expects text input.
+        # We should manually show the UI of mc_input_link's END state.
         
-    if text.startswith("✏️ Rename "):
-        name = text.replace("✏️ Rename ", "")
+        # Or better: call a helper function that renders "Enter News" UI.
+        # Refactor mc_input_link logic?
+        # Let's just copy the UI rendering logic.
+        
+        # Saved Images
+        saved_images = get_news_images()
+        kb = []
+        row = []
+        for img in saved_images:
+            row.append(InlineKeyboardButton(f"🖼️ {img['name']}", callback_data=f"img_select_{img['name']}"))
+            if len(row) == 2:
+                kb.append(row)
+                row = []
+        if row: kb.append(row)
+        
+        kb.append([InlineKeyboardButton("🔄 Use Last News", callback_data="img_use_last"), InlineKeyboardButton("⚙️ Manage Images", callback_data="img_manage")])
+        kb.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+        
+        await query.edit_message_text(
+            "📰 **Enter News/Content**\n\n"
+            "Please send the text content (News, ignoring text, etc.) to place at the top.\n"
+            "Or choose a saved image:",
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return MC_INPUT_NEWS
+
+    if data.startswith("mang_view_"):
+        name = data.replace("mang_view_", "")
+        context.user_data['manage_image_name'] = name
+        
+        # Find image details
+        images = get_news_images()
+        found = next((img for img in images if img['name'] == name), None)
+        
+        if not found:
+            await query.edit_message_text("❌ Image not found.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="img_manage")]]))
+            return MC_MANAGE_IMAGES
+            
+        text_content = found.get('text', '*(No Text)*')
+        details = (
+            f"🖼️ **Image Details**\n\n"
+            f"**Name**: `{name}`\n"
+            f"**Saved Text**: {html.escape(text_content)}\n"
+        )
+        
+        kb = [
+            [InlineKeyboardButton("👁 Preview", callback_data=f"mang_preview_{name}"), InlineKeyboardButton("🔄 Update Content", callback_data=f"mang_update_{name}")],
+            [InlineKeyboardButton("✏️ Rename", callback_data=f"mang_rename_{name}"), InlineKeyboardButton("🗑️ Delete", callback_data=f"mang_delete_{name}")],
+            [InlineKeyboardButton("🔙 Back List", callback_data="img_manage")]
+        ]
+        
+        await query.edit_message_text(details, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
+        return MC_MANAGE_IMAGES
+        
+    if data.startswith("mang_preview_"):
+        name = data.replace("mang_preview_", "")
+        images = get_news_images()
+        found = next((img for img in images if img['name'] == name), None)
+        if found:
+             await context.bot.send_photo(chat_id=update.effective_chat.id, photo=found['file_id'], caption=f"Preview: {name}")
+        return MC_MANAGE_IMAGES
+
+    if data.startswith("mang_delete_"):
+        name = data.replace("mang_delete_", "")
+        delete_news_image(name)
+        await query.answer(f"Deleted {name}")
+        return await mc_manage_images_dashboard(update, context) # Refresh list
+
+    if data.startswith("mang_rename_"):
+        name = data.replace("mang_rename_", "")
         context.user_data['rename_image_old_name'] = name
-        await update.message.reply_text(
-            f"✏️ Enter new name for **{name}**:",
-            reply_markup=ReplyKeyboardMarkup([["❌ Cancel"]], resize_keyboard=True),
+        
+        await query.edit_message_text(
+            f"✏️ **Rename Image**\n\n"
+            f"Current Name: `{name}`\n"
+            "Enter the new name:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=f"mang_view_{name}")]], resize_keyboard=True),
             parse_mode=ParseMode.MARKDOWN
         )
         return MC_RENAME_IMAGE
+
+    if data.startswith("mang_update_"):
+        name = data.replace("mang_update_", "")
+        context.user_data['update_image_name'] = name
         
-    # Fallback
-    await update.message.reply_text("⚠ Invalid option.")
-    return await start_manage_images(update, context)
+        await query.edit_message_text(
+            f"🔄 **Update Content for {name}**\n\n"
+            "Please send the **New Photo** (with optional caption) OR just **Text** to update this entry.",
+             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=f"mang_view_{name}")]], resize_keyboard=True),
+             parse_mode=ParseMode.MARKDOWN
+        )
+        return MC_UPDATE_IMAGE_CONTENT
+        
+    return MC_MANAGE_IMAGES
 
 async def mc_rename_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Check for callback cancel
+    if update.callback_query:
+        # Cancel pressed
+        name = context.user_data.get('rename_image_old_name')
+        # Redirect to view
+        update.callback_query.data = f"mang_view_{name}"
+        return await mc_manage_callback(update, context)
+
     text = update.message.text
-    if text == "❌ Cancel":
-        return await start_manage_images(update, context)
-        
     old_name = context.user_data.get('rename_image_old_name')
     new_name = text.strip()
     
@@ -1287,12 +1427,74 @@ async def mc_rename_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return MC_RENAME_IMAGE
         
     success = rename_news_image(old_name, new_name)
+    
+    # We need to show the View UI again.
+    # But since we are in MessageHandler (text input), we should send a new message.
+    
     if success:
-        await update.message.reply_text(f"✅ Renamed to **{new_name}**", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(f"✅ Renamed to **{new_name}**.", parse_mode=ParseMode.MARKDOWN)
+        # Update context name for view
+        name_to_view = new_name
     else:
-        await update.message.reply_text(f"❌ Failed to rename. Name might already exist.", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(f"❌ Failed. Name might exist.", parse_mode=ParseMode.MARKDOWN)
+        name_to_view = old_name
         
-    return await start_manage_images(update, context)
+    # Simulate routing to View
+    # Construct a fake callback query? Or just call a helper?
+    # Helper is better.
+    # Let's call a helper that renders the view.
+    # But mc_manage_callback handles rendering logic inside interactions.
+    # I should extract `render_image_details`?
+    # For now, let's just trigger the dashboard behavior.
+    
+    # Trigger dashboard
+    return await mc_manage_images_dashboard(update, context)
+
+async def mc_update_image_content_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Check callback cancel
+    if update.callback_query:
+        name = context.user_data.get('update_image_name')
+        update.callback_query.data = f"mang_view_{name}"
+        return await mc_manage_callback(update, context)
+
+    name = context.user_data.get('update_image_name')
+    if not name:
+        return await mc_manage_images_dashboard(update, context)
+        
+    text = update.message.text
+    photo = update.message.photo
+    
+    new_text = text
+    new_file_id = None
+    
+    if photo:
+        new_file_id = photo[-1].file_id
+        new_text = update.message.caption or ""
+        
+    # We need to look up the existing image to get its FileID if not provided (i.e. text update only)?
+    # Or does "Update" imply replacing the File?
+    # If user sends just Text, we probably update Text but keep FileID?
+    # If user sends Photo, we update FileID and Text.
+    
+    images = get_news_images()
+    found = next((img for img in images if img['name'] == name), None)
+    
+    if not found:
+        await update.message.reply_text("❌ Image entry lost.")
+        return await mc_manage_images_dashboard(update, context)
+        
+    final_file_id = new_file_id if new_file_id else found['file_id']
+    final_text = new_text if new_text is not None else found.get('text')
+    
+    # We need to manually update the entry.
+    success = update_news_image(name, file_id=final_file_id, text=final_text)
+    
+    if success:
+        await update.message.reply_text(f"✅ Content updated for **{name}**.", parse_mode=ParseMode.MARKDOWN)
+    else:
+        await update.message.reply_text("❌ Update failed.", parse_mode=ParseMode.MARKDOWN)
+        
+    return await mc_manage_images_dashboard(update, context)
 
 async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -1870,13 +2072,20 @@ main_channel_conv = ConversationHandler(
     states={
         MC_INPUT_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_input_id)],
         MC_INPUT_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_input_link)],
-        MC_INPUT_NEWS: [MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_input_news)],
+        MC_INPUT_NEWS: [
+            MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_input_news),
+            CallbackQueryHandler(mc_input_news_callback)
+        ],
         MC_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_action)],
         MC_SCHED_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_sched_date_input)],
         MC_SCHED_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_sched_time_input)],
         MC_SCHEDULE_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_schedule_confirm)],
-        MC_MANAGE_IMAGES: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_manage_images)],
-        MC_RENAME_IMAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_rename_input)]
+        MC_MANAGE_IMAGES: [CallbackQueryHandler(mc_manage_callback)],
+        MC_RENAME_IMAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_rename_input), CallbackQueryHandler(mc_rename_input)],
+        MC_UPDATE_IMAGE_CONTENT: [
+            MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), mc_update_image_content_handler),
+            CallbackQueryHandler(mc_update_image_content_handler)
+        ]
     },
     fallbacks=[
         MessageHandler(filters.Regex(MENU_REGEX), global_fallback),

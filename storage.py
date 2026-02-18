@@ -462,13 +462,23 @@ def get_news_images() -> List[Dict[str, str]]:
             pass
     return []
 
-def save_news_image(file_id: str, name: str = None) -> str:
-    """Saves a news image. Returns the name used."""
+def save_news_image(file_id: str, name: str = None, text: str = None) -> str:
+    """Saves a news image with optional text. Returns the name used."""
     images = get_news_images()
     
     # Check if file_id already exists to avoid duplicates
     for img in images:
         if img['file_id'] == file_id:
+            # Update text if provided
+            if text is not None:
+                img['text'] = text
+                # Save update
+                with lock:
+                    conn = get_connection()
+                    c = conn.cursor()
+                    c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ("news_images", json.dumps(images, ensure_ascii=False)))
+                    conn.commit()
+                    conn.close()
             return img['name']
 
     # Generate name if not provided
@@ -484,7 +494,10 @@ def save_news_image(file_id: str, name: str = None) -> str:
         name = f"Image {max_num + 1}"
             
     # Add new
-    images.append({"name": name, "file_id": file_id})
+    new_entry = {"name": name, "file_id": file_id}
+    if text: new_entry["text"] = text
+    
+    images.append(new_entry)
     
     with lock:
         conn = get_connection()
@@ -494,6 +507,28 @@ def save_news_image(file_id: str, name: str = None) -> str:
         conn.close()
         
     return name
+
+def update_news_image(name: str, file_id: str = None, text: str = None) -> bool:
+    """Updates an existing news image by name."""
+    images = get_news_images()
+    found = False
+    
+    for img in images:
+        if img['name'] == name:
+            if file_id: img['file_id'] = file_id
+            if text is not None: img['text'] = text
+            found = True
+            break
+            
+    if found:
+        with lock:
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ("news_images", json.dumps(images, ensure_ascii=False)))
+            conn.commit()
+            conn.close()
+            
+    return found
 
 def delete_news_image(name: str):
     images = get_news_images()
