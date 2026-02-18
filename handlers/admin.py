@@ -1373,7 +1373,45 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         images = get_news_images()
         found = next((img for img in images if img['name'] == name), None)
         if found:
-             await context.bot.send_photo(chat_id=update.effective_chat.id, photo=found['file_id'], caption=f"Preview: {name}")
+             # Simulation of Main Channel Post
+             try:
+                 # 1. Prepare Dummy Data
+                 news_text = found.get('text', '')
+                 escaped_news = f"<s>{html.escape(news_text)}</s>" if news_text else ""
+                 
+                 variables = {
+                     "post_id": "(Preview)",
+                     "short_link": "https://example.com/preview_link",
+                     "bot_deep_link": f"https://t.me/{context.bot.username}?start=preview",
+                     "news": escaped_news,
+                     "how_to_open_link": get_help_link()
+                 }
+                 
+                 # 2. Get Template
+                 template = get_main_template()
+                 
+                 # 3. Format
+                 preview_text = template.format(**variables)
+                 
+                 # 4. Buttons (Simulation)
+                 kb = [
+                     [InlineKeyboardButton("🚀 Post to Channel", callback_data="dummy"), InlineKeyboardButton("⏰ Schedule", callback_data="dummy")],
+                     [InlineKeyboardButton("👁️ Preview as Channel", callback_data="dummy"), InlineKeyboardButton("📋 Copy Content", callback_data="dummy")],
+                     [InlineKeyboardButton("❌ Close Preview", callback_data=f"mang_view_{name}")]
+                 ]
+                 
+                 # 5. Send
+                 # Use send_photo because likely to be photo post
+                 await context.bot.send_photo(
+                     chat_id=update.effective_chat.id,
+                     photo=found['file_id'],
+                     caption=preview_text,
+                     reply_markup=InlineKeyboardMarkup(kb),
+                     parse_mode=ParseMode.HTML
+                 )
+             except Exception as e:
+                 await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ Preview generation failed: {e}")
+                 
         return MC_MANAGE_IMAGES
 
     if data.startswith("mang_delete_"):
@@ -1399,9 +1437,16 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         name = data.replace("mang_update_", "")
         context.user_data['update_image_name'] = name
         
+        # Find current text
+        images = get_news_images()
+        found = next((img for img in images if img['name'] == name), None)
+        current_text = found.get('text', '') if found else ''
+        
         await query.edit_message_text(
             f"🔄 **Update Content for {name}**\n\n"
-            "Please send the **New Photo** (with optional caption) OR just **Text** to update this entry.",
+            f"**Current Text**:\n`{current_text}`\n\n"
+            "Please send the **New Photo** (with optional caption) OR just **New Text** to update this entry.\n"
+            "_(If you send a Photo without caption, existing text will be kept)_",
              reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=f"mang_view_{name}")]], resize_keyboard=True),
              parse_mode=ParseMode.MARKDOWN
         )
@@ -1469,7 +1514,8 @@ async def mc_update_image_content_handler(update: Update, context: ContextTypes.
     
     if photo:
         new_file_id = photo[-1].file_id
-        new_text = update.message.caption or ""
+        # Use caption if present, otherwise None (to keep old text)
+        new_text = update.message.caption 
         
     # We need to look up the existing image to get its FileID if not provided (i.e. text update only)?
     # Or does "Update" imply replacing the File?
@@ -1484,6 +1530,11 @@ async def mc_update_image_content_handler(update: Update, context: ContextTypes.
         return await mc_manage_images_dashboard(update, context)
         
     final_file_id = new_file_id if new_file_id else found['file_id']
+    # If new_text is explicit None (photo without caption), keep old text.
+    # If user sent text message, new_text is string.
+    # If user sent photo with caption, new_text is string.
+    # To delete text, user must send empty text message? Telegram doesn't allow empty text messages easily.
+    # Maybe add a "Delete Text" button later if needed.
     final_text = new_text if new_text is not None else found.get('text')
     
     # We need to manually update the entry.
