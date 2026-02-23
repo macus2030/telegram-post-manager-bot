@@ -306,9 +306,10 @@ async def handle_schedule_callback(update: Update, context: ContextTypes.DEFAULT
         post = get_post(pid)
         target_chat_id = post.get("target_chat_id")
         preview_text = post.get("channel_preview_text")
+        image_id = post.get("main_channel_photo_id")
 
         # Call helper directly
-        success = await execute_scheduled_post(context, pid, target_chat_id, preview_text)
+        success = await execute_scheduled_post(context, pid, target_chat_id, preview_text, image_id)
         
         if success:
             await query.answer("✅ Posted to channel!")

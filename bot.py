@@ -64,6 +64,7 @@ async def restore_scheduled_jobs(context: ContextTypes.DEFAULT_TYPE):
             
         target_chat_id = data.get("target_chat_id")
         preview_text = data.get("channel_preview_text")
+        image_id = data.get("main_channel_photo_id")
         
         if not target_chat_id or not preview_text:
             logging.warning(f"Post #{pid} missing schedule data (chat_id or text). Skipping.")
@@ -81,7 +82,7 @@ async def restore_scheduled_jobs(context: ContextTypes.DEFAULT_TYPE):
         if delay < 0:
             logging.warning(f"Post #{pid} schedule time passed ({delay}s ago). Attempting to send immediately...")
             # Execute Immediately
-            success = await execute_scheduled_post(context, str(pid), target_chat_id, preview_text)
+            success = await execute_scheduled_post(context, str(pid), target_chat_id, preview_text, image_id)
             if success:
                  count += 1
             else:
@@ -97,7 +98,8 @@ async def restore_scheduled_jobs(context: ContextTypes.DEFAULT_TYPE):
             data={
                 "chat_id": target_chat_id,
                 "text": preview_text,
-                "post_id": str(pid)
+                "post_id": str(pid),
+                "image_id": image_id
             }
         )
         count += 1
