@@ -1566,9 +1566,9 @@ async def mc_rename_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         success = rename_news_image(old_name, new_name)
         
         if success:
-            await update.message.reply_text(f"✅ Renamed to **{new_name}**.", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(f"✅ Renamed to: {new_name}")
         else:
-            await update.message.reply_text(f"❌ Failed. Name might already exist.", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(f"❌ Failed. Name might already exist.")
             
         # Return to dashboard
         return await mc_manage_images_dashboard(update, context)
