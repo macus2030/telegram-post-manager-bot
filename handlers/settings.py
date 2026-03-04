@@ -1,14 +1,14 @@
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, MessageOriginChannel
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
-from storage import get_message_template, update_message_template, get_help_link, update_help_link, get_main_template, update_main_template, get_auto_delete_timer, update_auto_delete_timer, get_protect_content, update_protect_content, get_welcome_message, update_welcome_message, get_backup_interval, update_backup_interval
+from storage import get_message_template, update_message_template, get_help_link, update_help_link, get_main_template, update_main_template, get_auto_delete_timer, update_auto_delete_timer, get_protect_content, update_protect_content, get_welcome_message, update_welcome_message, get_backup_interval, update_backup_interval, clear_all_news_data
 from utils.helpers import check_admin
 from config import HOW_TO_OPEN_LINK
 from handlers.admin import MENU_REGEX, global_fallback, cancel
 import logging
 
 # States
-SELECT_SETTING, EDIT_MSG_TEMPLATE, EDIT_HELP_LINK, EDIT_MAIN_TEMPLATE, MANAGE_FORCE_SUB, ADD_FS_CHANNEL, EDIT_GLOBAL_TIMER, EDIT_WELCOME_MSG, EDIT_BACKUP_INTERVAL = range(9)
+SELECT_SETTING, EDIT_MSG_TEMPLATE, EDIT_HELP_LINK, EDIT_MAIN_TEMPLATE, MANAGE_FORCE_SUB, ADD_FS_CHANNEL, EDIT_GLOBAL_TIMER, EDIT_WELCOME_MSG, EDIT_BACKUP_INTERVAL, CONFIRM_DELETE_NEWS = range(10)
 
 async def settings_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entry point for Settings."""
@@ -27,6 +27,7 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         ["🔗 Edit Help Link", "🔐 Manage Force Subscribe"],
         ["⏱️ Edit Global Timer", "🔒 Toggle Content Protection"],
         ["👋 Edit Welcome Message", "💾 Backup Interval"],
+        ["🗑️ Clear All News Data"],
         ["🔙 Back to Dashboard"]
     ]
     
@@ -133,6 +134,19 @@ async def handle_setting_selection(update: Update, context: ContextTypes.DEFAULT
             parse_mode="Markdown"
         )
         return EDIT_BACKUP_INTERVAL
+
+    if text == "🗑️ Clear All News Data":
+        await update.message.reply_text(
+            "🗑️ **Clear All News Data**\n\n"
+            "⚠️ **WARNING**: This will permanently delete:\n"
+            "• All saved news images and names\n"
+            "• All saved news text content\n"
+            "• 'Last News' history\n\n"
+            "This action cannot be undone. Are you sure?",
+            reply_markup=ReplyKeyboardMarkup([["✅ Yes, Delete Everything"], ["❌ No, Cancel"]], resize_keyboard=True),
+            parse_mode="Markdown"
+        )
+        return CONFIRM_DELETE_NEWS
 
     await update.message.reply_text("Invalid selection.")
     return SELECT_SETTING
@@ -370,6 +384,16 @@ async def save_backup_interval(update: Update, context: ContextTypes.DEFAULT_TYP
     )
     return await show_settings_menu(update, context)
 
+async def clear_news_data_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text == "✅ Yes, Delete Everything":
+        clear_all_news_data()
+        await update.message.reply_text("✅ **All news data has been permanently deleted.**", parse_mode="Markdown")
+    else:
+        await update.message.reply_text("❌ Deletion cancelled.")
+    
+    return await show_settings_menu(update, context)
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Cancelled.")
     from handlers.admin import admin_dashboard
@@ -388,6 +412,7 @@ settings_conv = ConversationHandler(
             MessageHandler(filters.Regex("^🔒 Toggle Content Protection$"), handle_setting_selection),
             MessageHandler(filters.Regex("^👋 Edit Welcome Message$"), handle_setting_selection),
             MessageHandler(filters.Regex("^💾 Backup Interval$"), handle_setting_selection),
+            MessageHandler(filters.Regex("^🗑️ Clear All News Data$"), handle_setting_selection),
             MessageHandler(filters.Regex("^🔙 Back to Dashboard$"), handle_setting_selection)
         ],
         EDIT_MSG_TEMPLATE: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_msg_template)],
@@ -403,7 +428,8 @@ settings_conv = ConversationHandler(
         ],
         ADD_FS_CHANNEL: [MessageHandler((filters.TEXT | filters.FORWARDED) & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), add_fs_channel)],
         EDIT_GLOBAL_TIMER: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_global_timer)],
-        EDIT_BACKUP_INTERVAL: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_backup_interval)]
+        EDIT_BACKUP_INTERVAL: [MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(MENU_REGEX), save_backup_interval)],
+        CONFIRM_DELETE_NEWS: [MessageHandler(filters.Regex("^(✅ Yes, Delete Everything|❌ No, Cancel)$"), clear_news_data_handler)]
     },
     fallbacks=[
         MessageHandler(filters.Regex(MENU_REGEX), global_fallback),

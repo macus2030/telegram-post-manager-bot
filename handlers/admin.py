@@ -1278,34 +1278,43 @@ async def mc_input_news_callback(update: Update, context: ContextTypes.DEFAULT_T
     return MC_INPUT_NEWS
 
 async def mc_manage_images_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    images = get_news_images()
-    query = update.callback_query
-    
-    if not images:
-        text = "⚠ No saved images found."
-        kb = [[InlineKeyboardButton("🔙 Back", callback_data="mang_back")]]
+    try:
+        images = get_news_images()
+        query = update.callback_query
+        
+        if not images:
+            text = "⚠ No saved images found."
+            kb = [[InlineKeyboardButton("🔙 Back", callback_data="mang_back")]]
+            if query:
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb))
+            else:
+                await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb))
+            return MC_MANAGE_IMAGES
+            
+        text = "⚙️ **Manage Saved Images**\n\nSelect an image to manage:"
+        kb = []
+        
+        for img in images:
+            kb.append([InlineKeyboardButton(f"🖼️ {img['name']}", callback_data=f"mang_view_{img['name']}")])
+            
+        kb.append([InlineKeyboardButton("🔙 Back to Post", callback_data="mang_back")])
+        
         if query:
-            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb))
+            try:
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
+            except Exception:
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
         else:
-            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb))
+            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
+            
         return MC_MANAGE_IMAGES
-        
-    text = "⚙️ **Manage Saved Images**\n\nSelect an image to manage:"
-    kb = []
-    
-    for img in images:
-        kb.append([InlineKeyboardButton(f"🖼️ {img['name']}", callback_data=f"mang_view_{img['name']}")])
-        
-    kb.append([InlineKeyboardButton("🔙 Back to Post", callback_data="mang_back")])
-    
-    if query:
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
-    else:
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
-        
-    return MC_MANAGE_IMAGES
+    except Exception as e:
+        logging.error(f"mc_manage_images_dashboard error: {e}", exc_info=True)
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ Error loading images: {e}")
+        return MC_MANAGE_IMAGES
 
 async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  try:
     query = update.callback_query
     await query.answer()
     data = query.data
@@ -1355,29 +1364,6 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await query.edit_message_text("❌ Image not found.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="img_manage")]]))
             return MC_MANAGE_IMAGES
 
-    if data.startswith("mang_select_"):
-        name = data.replace("mang_select_", "")
-        images = get_news_images()
-        found = next((img for img in images if img['name'] == name), None)
-        if found:
-            # Same logic as img_select_
-            image_id = found['file_id']
-            news_text = found.get('text', "")
-            
-            await query.answer(f"✅ Selected: {name}")
-            save_last_news(news_text, image_id)
-            
-            if news_text:
-                context.user_data['mc_news'] = html.escape(news_text)
-            else:
-                context.user_data['mc_news'] = ""
-                
-            context.user_data['mc_news_image_id'] = image_id
-            return await mc_render_preview(update, context)
-        else:
-            await query.answer("⚠ Image not found.")
-            return MC_MANAGE_IMAGES
-            
         text_content = found.get('text', '*(No Text)*')
         details = (
             f"🖼️ **Image Details**\n\n"
@@ -1409,6 +1395,28 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 parse_mode=ParseMode.MARKDOWN
             )
         return MC_MANAGE_IMAGES
+
+    if data.startswith("mang_select_"):
+        name = data.replace("mang_select_", "")
+        images = get_news_images()
+        found = next((img for img in images if img['name'] == name), None)
+        if found:
+            image_id = found['file_id']
+            news_text = found.get('text', "")
+            
+            await query.answer(f"✅ Selected: {name}")
+            save_last_news(news_text, image_id)
+            
+            if news_text:
+                context.user_data['mc_news'] = html.escape(news_text)
+            else:
+                context.user_data['mc_news'] = ""
+                
+            context.user_data['mc_news_image_id'] = image_id
+            return await mc_render_preview(update, context)
+        else:
+            await query.answer("⚠ Image not found.")
+            return MC_MANAGE_IMAGES
         
     if data.startswith("mang_preview_"):
         name = data.replace("mang_preview_", "")
@@ -1525,36 +1533,49 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return MC_UPDATE_IMAGE_CONTENT
         
     return MC_MANAGE_IMAGES
+  except Exception as e:
+    logging.error(f"mc_manage_callback error: {e}", exc_info=True)
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ Error: {e}")
+    return MC_MANAGE_IMAGES
 
 async def mc_rename_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Check for callback cancel
-    if update.callback_query:
-        query = update.callback_query
-        await query.answer()
-        # Go back to dashboard directly
-        return await mc_manage_images_dashboard(update, context)
+    try:
+        # Check for callback cancel
+        if update.callback_query:
+            query = update.callback_query
+            await query.answer()
+            # Go back to dashboard directly
+            return await mc_manage_images_dashboard(update, context)
 
-    text = update.message.text
-    old_name = context.user_data.get('rename_image_old_name')
-    new_name = text.strip()
-    
-    if not new_name:
-        await update.message.reply_text("⚠ Name cannot be empty.")
-        return MC_RENAME_IMAGE
+        text = update.message.text
+        old_name = context.user_data.get('rename_image_old_name')
+        new_name = text.strip()
         
-    if len(new_name) > 30:
-        await update.message.reply_text("⚠ Name too long. Max 30 characters allowed for buttons.")
-        return MC_RENAME_IMAGE
+        if not old_name:
+            await update.message.reply_text("❌ Could not determine which image to rename. Try again.")
+            return await mc_manage_images_dashboard(update, context)
         
-    success = rename_news_image(old_name, new_name)
-    
-    if success:
-        await update.message.reply_text(f"✅ Renamed to **{new_name}**.", parse_mode=ParseMode.MARKDOWN)
-    else:
-        await update.message.reply_text(f"❌ Failed. Name might already exist.", parse_mode=ParseMode.MARKDOWN)
+        if not new_name:
+            await update.message.reply_text("⚠ Name cannot be empty.")
+            return MC_RENAME_IMAGE
+            
+        if len(new_name) > 30:
+            await update.message.reply_text("⚠ Name too long. Max 30 characters allowed for buttons.")
+            return MC_RENAME_IMAGE
+            
+        success = rename_news_image(old_name, new_name)
         
-    # Return to dashboard
-    return await mc_manage_images_dashboard(update, context)
+        if success:
+            await update.message.reply_text(f"✅ Renamed to **{new_name}**.", parse_mode=ParseMode.MARKDOWN)
+        else:
+            await update.message.reply_text(f"❌ Failed. Name might already exist.", parse_mode=ParseMode.MARKDOWN)
+            
+        # Return to dashboard
+        return await mc_manage_images_dashboard(update, context)
+    except Exception as e:
+        logging.error(f"mc_rename_input error: {e}", exc_info=True)
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ Rename error: {e}")
+        return await mc_manage_images_dashboard(update, context)
 
 async def mc_update_image_content_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check callback cancel

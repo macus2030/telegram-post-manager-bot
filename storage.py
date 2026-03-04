@@ -541,6 +541,18 @@ def delete_news_image(name: str):
         conn.commit()
         conn.close()
 
+def clear_all_news_data():
+    """Wipes all news-related data from config."""
+    with lock:
+        conn = get_connection()
+        c = conn.cursor()
+        # Clear last news text and image
+        c.execute("DELETE FROM config WHERE key IN ('last_news', 'last_news_image')")
+        # Clear saved images list
+        c.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ("news_images", "[]"))
+        conn.commit()
+        conn.close()
+
 def rename_news_image(old_name: str, new_name: str) -> bool:
     images = get_news_images()
     found = False
