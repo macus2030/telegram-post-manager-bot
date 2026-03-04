@@ -1313,12 +1313,12 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Handle "Back List" and "img_manage" — return to image list dashboard
     if data in ("mang_back", "img_manage"):
         # Return to Input News from mang_back, or dashboard from img_manage
-        if data == \"mang_back\":
+        if data == "mang_back":
             saved_images = get_news_images()
             kb = []
             row = []
             for img in saved_images[-20:]:
-                row.append(InlineKeyboardButton(f\"🖼️ {img['name']}\", callback_data=f\"img_select_{img['name']}\"))
+                row.append(InlineKeyboardButton(f"🖼️ {img['name']}", callback_data=f"img_select_{img['name']}"))
                 if len(row) == 2:
                     kb.append(row)
                     row = []
@@ -1386,10 +1386,10 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         
         kb = [
-            [InlineKeyboardButton(\"✅ Select this News\", callback_data=f\"mang_select_{name}\")],
-            [InlineKeyboardButton(\"👁 Preview\", callback_data=f\"mang_preview_{name}\"), InlineKeyboardButton(\"🔄 Update Content\", callback_data=f\"mang_update_{name}\")],
-            [InlineKeyboardButton(\"✏️ Rename\", callback_data=f\"mang_rename_{name}\"), InlineKeyboardButton(\"🗑️ Delete\", callback_data=f\"mang_delete_{name}\")],
-            [InlineKeyboardButton(\"🔙 Back List\", callback_data=\"img_manage\")]
+            [InlineKeyboardButton("✅ Select this News", callback_data=f"mang_select_{name}")],
+            [InlineKeyboardButton("👁 Preview", callback_data=f"mang_preview_{name}"), InlineKeyboardButton("🔄 Update Content", callback_data=f"mang_update_{name}")],
+            [InlineKeyboardButton("✏️ Rename", callback_data=f"mang_rename_{name}"), InlineKeyboardButton("🗑️ Delete", callback_data=f"mang_delete_{name}")],
+            [InlineKeyboardButton("🔙 Back List", callback_data="img_manage")]
         ]
         
         # If this is called from a photo message (e.g. Close Preview), we can't edit_message_text on a photo.
@@ -1471,10 +1471,10 @@ async def mc_manage_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f"**Saved Text**: {html.escape(text_content)}\n"
             )
             kb = [
-                [InlineKeyboardButton(\"✅ Select this News\", callback_data=f\"mang_select_{name}\")],
-                [InlineKeyboardButton(\"👁 Preview\", callback_data=f\"mang_preview_{name}\"), InlineKeyboardButton(\"🔄 Update Content\", callback_data=f\"mang_update_{name}\")],
-                [InlineKeyboardButton(\"✏️ Rename\", callback_data=f\"mang_rename_{name}\"), InlineKeyboardButton(\"🗑️ Delete\", callback_data=f\"mang_delete_{name}\")],
-                [InlineKeyboardButton(\"🔙 Back List\", callback_data=\"img_manage\")]
+                [InlineKeyboardButton("✅ Select this News", callback_data=f"mang_select_{name}")],
+                [InlineKeyboardButton("👁 Preview", callback_data=f"mang_preview_{name}"), InlineKeyboardButton("🔄 Update Content", callback_data=f"mang_update_{name}")],
+                [InlineKeyboardButton("✏️ Rename", callback_data=f"mang_rename_{name}"), InlineKeyboardButton("🗑️ Delete", callback_data=f"mang_delete_{name}")],
+                [InlineKeyboardButton("🔙 Back List", callback_data="img_manage")]
             ]
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
@@ -1539,11 +1539,11 @@ async def mc_rename_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     new_name = text.strip()
     
     if not new_name:
-        await update.message.reply_text(\"⚠ Name cannot be empty.\")
+        await update.message.reply_text("⚠ Name cannot be empty.")
         return MC_RENAME_IMAGE
         
     if len(new_name) > 30:
-        await update.message.reply_text(\"⚠ Name too long. Max 30 characters allowed for buttons.\")
+        await update.message.reply_text("⚠ Name too long. Max 30 characters allowed for buttons.")
         return MC_RENAME_IMAGE
         
     success = rename_news_image(old_name, new_name)
