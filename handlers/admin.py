@@ -1560,7 +1560,13 @@ async def mc_rename_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return MC_RENAME_IMAGE
             
         if len(new_name) > 30:
-            await update.message.reply_text("⚠ Name too long. Max 30 characters allowed for buttons.")
+            await update.message.reply_text("⚠ Name too long. Max 30 characters allowed.")
+            return MC_RENAME_IMAGE
+        
+        # Check byte length for Telegram callback_data limit (64 bytes max)
+        # Longest prefix is "mang_select_" = 12 bytes, so name can be max 52 bytes
+        if len(new_name.encode('utf-8')) > 50:
+            await update.message.reply_text("⚠ Name too long (emojis take extra space). Please use a shorter name.")
             return MC_RENAME_IMAGE
             
         success = rename_news_image(old_name, new_name)
