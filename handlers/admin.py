@@ -1145,6 +1145,7 @@ async def mc_input_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return MC_INPUT_NEWS
 
 async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"[DEBUG] mc_input_news called. text={bool(update.message.text)}, photo={bool(update.message.photo)}")
     try:
         text = update.message.text
         photo = update.message.photo
@@ -1168,11 +1169,13 @@ async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
              pass
         
         if not news_text and not image_id:
+             print("[DEBUG] mc_input_news: No text and no image_id. Returning MC_INPUT_NEWS")
              await update.message.reply_text("⚠ Please enter text or send an image.")
              return MC_INPUT_NEWS
         
         # Save Last News
         save_last_news(news_text, image_id)
+        print(f"[DEBUG] mc_input_news: save_last_news called. text length={len(news_text) if news_text else 0}, image_id={image_id}")
         
         if news_text:
             escaped_text = html.escape(news_text)
@@ -1185,9 +1188,10 @@ async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
              context.user_data.pop('mc_news_image_id', None)
              
+        print("[DEBUG] mc_input_news: Transitioning to mc_render_preview")
         return await mc_render_preview(update, context)
     except Exception as e:
-        print(f"Error in mc_input_news: {e}")
+        print(f"[ERROR] Error in mc_input_news: {e}")
         await update.message.reply_text(f"❌ Error processing input: {e}")
         return MC_INPUT_NEWS
 
@@ -1195,6 +1199,7 @@ async def mc_input_news_callback(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     await query.answer()
     data = query.data
+    print(f"[DEBUG] mc_input_news_callback called with data: {data}")
     
     if data == "cancel":
         await query.delete_message()
@@ -1212,6 +1217,7 @@ async def mc_input_news_callback(update: Update, context: ContextTypes.DEFAULT_T
         
     if data == "img_use_last":
         last_data = get_last_news()
+        print(f"[DEBUG] img_use_last: retrieved data: {bool(last_data)}")
         if last_data and (last_data.get('text') or last_data.get('image_id')):
             news_text = last_data.get('text') or ""
             image_id = last_data.get('image_id')
@@ -1579,6 +1585,7 @@ async def mc_update_image_content_handler(update: Update, context: ContextTypes.
 
 async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    print(f"[DEBUG] mc_render_preview called for chat_id: {chat_id}")
     try:
         # Prepare variables
         data = context.user_data
@@ -1671,8 +1678,10 @@ async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML
                 )
         except Exception as e:
+            print(f"[ERROR] Preview Error (HTML): {e}\nRaw Text Preview:\n{preview_text}")
             await context.bot.send_message(chat_id, f"❌ Preview Error (HTML): {e}\n\nRaw Text:\n{preview_text}")
             return MC_INPUT_NEWS
+        print("[DEBUG] mc_render_preview: Successful. Returning MC_CONFIRM")
         return MC_CONFIRM
 
     except Exception as e:
