@@ -48,9 +48,16 @@ async def admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancels and ends the conversation."""
-    await update.message.reply_text(
-        "❌ Action cancelled.", reply_markup=ReplyKeyboardMarkup(DASHBOARD_KB, resize_keyboard=True)
-    )
+    if update.callback_query:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="❌ Action cancelled.",
+            reply_markup=ReplyKeyboardMarkup(DASHBOARD_KB, resize_keyboard=True)
+        )
+    else:
+        await update.message.reply_text(
+            "❌ Action cancelled.", reply_markup=ReplyKeyboardMarkup(DASHBOARD_KB, resize_keyboard=True)
+        )
     return ConversationHandler.END
 
 async def global_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1115,7 +1122,7 @@ async def mc_input_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Saved Images
     saved_images = get_news_images()
     row = []
-    for img in saved_images:
+    for img in saved_images[-20:]:
         # Use simple callback: img_select_{name}
         # Name might have spaces? Yes. Inline buttons handle strings.
         # But callback_data limit is 64 bytes.
@@ -1145,7 +1152,6 @@ async def mc_input_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return MC_INPUT_NEWS
 
 async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"[DEBUG] mc_input_news called. text={bool(update.message.text)}, photo={bool(update.message.photo)}")
     try:
         text = update.message.text
         photo = update.message.photo
@@ -1169,17 +1175,15 @@ async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
              pass
         
         if not news_text and not image_id:
-             print("[DEBUG] mc_input_news: No text and no image_id. Returning MC_INPUT_NEWS")
              await update.message.reply_text("⚠ Please enter text or send an image.")
              return MC_INPUT_NEWS
         
         # Save Last News
         save_last_news(news_text, image_id)
-        print(f"[DEBUG] mc_input_news: save_last_news called. text length={len(news_text) if news_text else 0}, image_id={image_id}")
         
         if news_text:
             escaped_text = html.escape(news_text)
-            context.user_data['mc_news'] = f"<s>{escaped_text}</s>"
+            context.user_data['mc_news'] = escaped_text
         else:
             context.user_data['mc_news'] = ""
             
@@ -1188,10 +1192,8 @@ async def mc_input_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
              context.user_data.pop('mc_news_image_id', None)
              
-        print("[DEBUG] mc_input_news: Transitioning to mc_render_preview")
         return await mc_render_preview(update, context)
     except Exception as e:
-        print(f"[ERROR] Error in mc_input_news: {e}")
         await update.message.reply_text(f"❌ Error processing input: {e}")
         return MC_INPUT_NEWS
 
@@ -1199,25 +1201,19 @@ async def mc_input_news_callback(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     await query.answer()
     data = query.data
-    print(f"[DEBUG] mc_input_news_callback called with data: {data}")
     
     if data == "cancel":
-        await query.delete_message()
-        return await cancel(update, context) # This might expect message update? cancel() uses reply_text.
-        # Check cancel() implementation.
-        # It uses update.message.reply_text.
-        # If calling from callback, update.message is None.
-        # We need to handle this manually or refactor cancel.
-        # For now, manually cancel.
-        await context.bot.send_message(update.effective_chat.id, "❌ Action cancelled.", reply_markup=ReplyKeyboardMarkup(DASHBOARD_KB, resize_keyboard=True))
-        return ConversationHandler.END
+        try:
+             await query.delete_message()
+        except:
+             pass
+        return await cancel(update, context)
 
     if data == "img_manage":
         return await mc_manage_images_dashboard(update, context)
         
     if data == "img_use_last":
         last_data = get_last_news()
-        print(f"[DEBUG] img_use_last: retrieved data: {bool(last_data)}")
         if last_data and (last_data.get('text') or last_data.get('image_id')):
             news_text = last_data.get('text') or ""
             image_id = last_data.get('image_id')
@@ -1232,7 +1228,7 @@ async def mc_input_news_callback(update: Update, context: ContextTypes.DEFAULT_T
             
             if news_text:
                 escaped_text = html.escape(news_text)
-                context.user_data['mc_news'] = f"<s>{escaped_text}</s>"
+                context.user_data['mc_news'] = escaped_text
             else:
                 context.user_data['mc_news'] = ""
                 
@@ -1269,7 +1265,7 @@ async def mc_input_news_callback(update: Update, context: ContextTypes.DEFAULT_T
             
             if news_text:
                 escaped_text = html.escape(news_text)
-                context.user_data['mc_news'] = f"<s>{escaped_text}</s>"
+                context.user_data['mc_news'] = escaped_text
             else:
                 context.user_data['mc_news'] = ""
                 
@@ -1585,7 +1581,6 @@ async def mc_update_image_content_handler(update: Update, context: ContextTypes.
 
 async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    print(f"[DEBUG] mc_render_preview called for chat_id: {chat_id}")
     try:
         # Prepare variables
         data = context.user_data
@@ -1649,7 +1644,7 @@ async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
             image_id = context.user_data.get('mc_news_image_id')
             
             if image_id:
-                if len(preview_text) > 1000:
+                if len(preview_text) > 950:
                     # Too long for caption, send separately
                     await context.bot.send_photo(chat_id=chat_id, photo=image_id)
                     await context.bot.send_message(
@@ -1678,10 +1673,8 @@ async def mc_render_preview(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML
                 )
         except Exception as e:
-            print(f"[ERROR] Preview Error (HTML): {e}\nRaw Text Preview:\n{preview_text}")
             await context.bot.send_message(chat_id, f"❌ Preview Error (HTML): {e}\n\nRaw Text:\n{preview_text}")
             return MC_INPUT_NEWS
-        print("[DEBUG] mc_render_preview: Successful. Returning MC_CONFIRM")
         return MC_CONFIRM
 
     except Exception as e:
