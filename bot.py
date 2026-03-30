@@ -132,7 +132,10 @@ async def auto_backup_job(context: ContextTypes.DEFAULT_TYPE):
                 caption=f"🔄 **Auto-Backup (Admin)**\n\n"
                         f"📅 {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                         f"💾 Database Backup",
-                parse_mode="Markdown"
+                parse_mode="Markdown",
+                read_timeout=120,
+                write_timeout=120,
+                connect_timeout=120
             )
             logging.info("✅ Auto-backup sent to admin successfully")
             backup_sent = True
@@ -148,7 +151,10 @@ async def auto_backup_job(context: ContextTypes.DEFAULT_TYPE):
                 caption=f"🔄 **Auto-Backup (Archive)**\n\n"
                         f"📅 {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                         f"💾 Partial/Full Dump",
-                parse_mode="Markdown"
+                parse_mode="Markdown",
+                read_timeout=120,
+                write_timeout=120,
+                connect_timeout=120
             )
             logging.info(f"✅ Auto-backup forwarded to channel {BACKUP_CHANNEL_ID}")
             backup_sent = True

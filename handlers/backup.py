@@ -36,7 +36,10 @@ async def export_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await update.message.reply_document(
             document=open(DB_FILE, 'rb'),
-            caption="💾 **Backup Database**\n\nHere is your current `bot.db` file. Keep it safe!"
+            caption="💾 **Backup Database**\n\nHere is your current `bot.db` file. Keep it safe!",
+            read_timeout=120,
+            write_timeout=120,
+            connect_timeout=120
         )
     except Exception as e:
         await update.message.reply_text(f"❌ Error exporting data: {e}")
